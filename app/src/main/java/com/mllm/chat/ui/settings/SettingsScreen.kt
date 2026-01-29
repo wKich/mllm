@@ -44,7 +44,7 @@ fun SettingsScreen(
                             viewModel.saveConfig()
                             onNavigateBack()
                         },
-                        enabled = viewModel.isConfigValid()
+                        enabled = uiState.isConfigValid
                     ) {
                         Text("Save")
                     }
@@ -149,7 +149,7 @@ fun SettingsScreen(
             ) {
                 Button(
                     onClick = viewModel::testConnection,
-                    enabled = viewModel.isConfigValid() && !uiState.isTesting,
+                    enabled = uiState.isConfigValid && !uiState.isTesting,
                     modifier = Modifier.weight(1f)
                 ) {
                     if (uiState.isTesting) {
