@@ -1,0 +1,200 @@
+package com.mllm.chat.data.remote
+
+import com.google.gson.Gson
+import com.mllm.chat.data.model.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.BufferedReader
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
+
+sealed class ApiResult<out T> {
+    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Error(val message: String, val code: Int? = null) : ApiResult<Nothing>()
+}
+
+sealed class StreamEvent {
+    data class Content(val text: String) : StreamEvent()
+    data class Error(val message: String) : StreamEvent()
+    object Done : StreamEvent()
+}
+
+@Singleton
+class OpenAIApiClient @Inject constructor() {
+    private val gson = Gson()
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun testConnection(config: ApiConfig): ApiResult<String> = withContext(Dispatchers.IO) {
+        try {
+            val request = ChatCompletionRequest(
+                model = config.model,
+                messages = listOf(ChatMessage("user", "Say 'Connection successful!' in exactly those words.")),
+                stream = false,
+                temperature = 0.1f,
+                maxTokens = 20
+            )
+
+            val requestBody = gson.toJson(request)
+                .toRequestBody("application/json".toMediaType())
+
+            val httpRequest = Request.Builder()
+                .url("${config.normalizedBaseUrl()}/chat/completions")
+                .addHeader("Authorization", "Bearer ${config.apiKey}")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(httpRequest).execute()
+            val responseBody = response.body?.string()
+
+            when {
+                response.isSuccessful && responseBody != null -> {
+                    val completionResponse = gson.fromJson(responseBody, ChatCompletionResponse::class.java)
+                    val content = completionResponse.choices?.firstOrNull()?.message?.content
+                    if (content != null) {
+                        ApiResult.Success(content)
+                    } else {
+                        ApiResult.Error("Empty response from API")
+                    }
+                }
+                response.code == 401 -> {
+                    ApiResult.Error("Authentication failed. Please check your API key.", 401)
+                }
+                response.code == 404 -> {
+                    ApiResult.Error("Model not found or invalid endpoint.", 404)
+                }
+                response.code == 429 -> {
+                    ApiResult.Error("Rate limit exceeded. Please try again later.", 429)
+                }
+                else -> {
+                    val errorResponse = try {
+                        gson.fromJson(responseBody, ErrorResponse::class.java)
+                    } catch (e: Exception) { null }
+                    val errorMessage = errorResponse?.error?.message ?: "API error: ${response.code}"
+                    ApiResult.Error(errorMessage, response.code)
+                }
+            }
+        } catch (e: IOException) {
+            ApiResult.Error("Network error: ${e.message ?: "Unable to connect"}")
+        } catch (e: Exception) {
+            ApiResult.Error("Error: ${e.message ?: "Unknown error"}")
+        }
+    }
+
+    fun streamChatCompletion(
+        config: ApiConfig,
+        messages: List<Message>
+    ): Flow<StreamEvent> = callbackFlow {
+        val chatMessages = mutableListOf<ChatMessage>()
+
+        // Add system prompt if configured
+        if (config.systemPrompt.isNotBlank()) {
+            chatMessages.add(ChatMessage("system", config.systemPrompt))
+        }
+
+        // Add conversation messages
+        chatMessages.addAll(messages.map { ChatMessage(it.role, it.content) })
+
+        val request = ChatCompletionRequest(
+            model = config.model,
+            messages = chatMessages,
+            stream = true,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens
+        )
+
+        val requestBody = gson.toJson(request)
+            .toRequestBody("application/json".toMediaType())
+
+        val httpRequest = Request.Builder()
+            .url("${config.normalizedBaseUrl()}/chat/completions")
+            .addHeader("Authorization", "Bearer ${config.apiKey}")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "text/event-stream")
+            .post(requestBody)
+            .build()
+
+        val call = client.newCall(httpRequest)
+
+        try {
+            val response = call.execute()
+
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string()
+                val errorMessage = when (response.code) {
+                    401 -> "Authentication failed. Please check your API key."
+                    404 -> "Model not found or invalid endpoint."
+                    429 -> "Rate limit exceeded. Please try again later."
+                    else -> {
+                        val errorResponse = try {
+                            gson.fromJson(errorBody, ErrorResponse::class.java)
+                        } catch (e: Exception) { null }
+                        errorResponse?.error?.message ?: "API error: ${response.code}"
+                    }
+                }
+                trySend(StreamEvent.Error(errorMessage))
+                close()
+                return@callbackFlow
+            }
+
+            val reader = response.body?.byteStream()?.bufferedReader()
+
+            reader?.use { bufferedReader ->
+                var line: String?
+                while (bufferedReader.readLine().also { line = it } != null) {
+                    val currentLine = line ?: continue
+
+                    if (currentLine.startsWith("data: ")) {
+                        val data = currentLine.removePrefix("data: ").trim()
+
+                        if (data == "[DONE]") {
+                            trySend(StreamEvent.Done)
+                            break
+                        }
+
+                        try {
+                            val chunk = gson.fromJson(data, ChatCompletionChunk::class.java)
+                            val content = chunk.choices?.firstOrNull()?.delta?.content
+                            if (!content.isNullOrEmpty()) {
+                                trySend(StreamEvent.Content(content))
+                            }
+
+                            // Check for finish reason
+                            val finishReason = chunk.choices?.firstOrNull()?.finishReason
+                            if (finishReason != null && finishReason != "null") {
+                                trySend(StreamEvent.Done)
+                                break
+                            }
+                        } catch (e: Exception) {
+                            // Skip malformed JSON lines
+                        }
+                    }
+                }
+            }
+
+            trySend(StreamEvent.Done)
+
+        } catch (e: IOException) {
+            trySend(StreamEvent.Error("Network error: ${e.message ?: "Connection failed"}"))
+        } catch (e: Exception) {
+            trySend(StreamEvent.Error("Error: ${e.message ?: "Unknown error"}"))
+        }
+
+        awaitClose {
+            call.cancel()
+        }
+    }
+}
