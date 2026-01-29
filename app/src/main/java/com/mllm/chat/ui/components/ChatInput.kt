@@ -3,6 +3,7 @@ package com.mllm.chat.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -11,7 +12,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatInput(
     value: String,
@@ -125,7 +127,7 @@ fun ChatInput(
                     )
                 ) {
                     Icon(
-                        imageVector = if (isStreaming) Icons.Default.Stop else Icons.AutoMirrored.Filled.Send,
+                        imageVector = if (isStreaming) Icons.Default.Stop else Icons.Filled.Send,
                         contentDescription = if (isStreaming) "Stop" else "Send",
                         tint = if (isStreaming) {
                             MaterialTheme.colorScheme.onError
