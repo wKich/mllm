@@ -11,11 +11,12 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ChatInput(
     value: String,
@@ -125,7 +127,7 @@ fun ChatInput(
                     )
                 ) {
                     Icon(
-                        imageVector = if (isStreaming) Icons.Default.Stop else Icons.AutoMirrored.Filled.Send,
+                        imageVector = if (isStreaming) Icons.Default.Stop else Icons.Filled.Send,
                         contentDescription = if (isStreaming) "Stop" else "Send",
                         tint = if (isStreaming) {
                             MaterialTheme.colorScheme.onError

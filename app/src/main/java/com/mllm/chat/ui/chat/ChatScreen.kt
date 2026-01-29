@@ -219,7 +219,7 @@ private fun ConversationDrawer(
             Text("New Chat")
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
 
         if (conversations.isEmpty()) {
             Text(
@@ -250,7 +250,7 @@ private fun ConversationDrawer(
             }
         }
 
-        HorizontalDivider()
+        Divider()
 
         NavigationDrawerItem(
             icon = { Icon(Icons.Default.Settings, contentDescription = null) },
