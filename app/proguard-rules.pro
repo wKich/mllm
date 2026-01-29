@@ -14,3 +14,7 @@
 # Room
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class *
+
+# Tink and Error Prone annotations
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**

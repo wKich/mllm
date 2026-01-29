@@ -90,6 +90,9 @@ dependencies {
     // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Error Prone annotations (required by Tink used in security-crypto)
+    compileOnly("com.google.errorprone:error_prone_annotations:2.18.0")
+
     // Markdown rendering
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-strikethrough:4.6.2")
