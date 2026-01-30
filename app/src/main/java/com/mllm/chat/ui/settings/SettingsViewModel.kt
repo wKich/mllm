@@ -22,7 +22,10 @@ data class SettingsUiState(
     val isTesting: Boolean = false,
     val testResult: TestResult? = null,
     val isSaved: Boolean = false
-)
+) {
+    val isConfigValid: Boolean
+        get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
+}
 
 sealed class TestResult {
     data class Success(val message: String) : TestResult()
@@ -137,10 +140,5 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    fun isConfigValid(): Boolean {
-        val state = _uiState.value
-        return state.baseUrl.isNotBlank() &&
-                state.apiKey.isNotBlank() &&
-                state.model.isNotBlank()
-    }
+    fun isConfigValid(): Boolean = _uiState.value.isConfigValid
 }
