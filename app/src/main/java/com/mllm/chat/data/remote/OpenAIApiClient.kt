@@ -12,7 +12,11 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.BufferedReader
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,6 +40,25 @@ class OpenAIApiClient @Inject constructor() {
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private fun getErrorMessage(e: Exception): String {
+        return when (e) {
+            is SocketTimeoutException -> "Connection timed out. Please check your internet connection and try again."
+            is UnknownHostException -> "Cannot resolve server address. Please check your Base URL and internet connection."
+            is SSLHandshakeException -> "SSL/TLS handshake failed. The server's certificate may be invalid or untrusted."
+            is SSLException -> "SSL/TLS error: ${e.message ?: "Secure connection failed"}"
+            is java.net.ConnectException -> "Connection refused. Please verify the server address and port."
+            is IOException -> "Network error: ${e.message ?: "Connection failed"}"
+            else -> {
+                val message = e.message
+                if (message.isNullOrBlank()) {
+                    "Unexpected error (${e.javaClass.simpleName}). Please try again."
+                } else {
+                    "Error: $message"
+                }
+            }
+        }
+    }
 
     suspend fun testConnection(config: ApiConfig): ApiResult<String> = withContext(Dispatchers.IO) {
         try {
@@ -87,10 +110,8 @@ class OpenAIApiClient @Inject constructor() {
                     ApiResult.Error(errorMessage, response.code)
                 }
             }
-        } catch (e: IOException) {
-            ApiResult.Error("Network error: ${e.message ?: "Unable to connect"}")
         } catch (e: Exception) {
-            ApiResult.Error("Error: ${e.message ?: "Unknown error"}")
+            ApiResult.Error(getErrorMessage(e))
         }
     }
 
@@ -187,10 +208,8 @@ class OpenAIApiClient @Inject constructor() {
 
             trySend(StreamEvent.Done)
 
-        } catch (e: IOException) {
-            trySend(StreamEvent.Error("Network error: ${e.message ?: "Connection failed"}"))
         } catch (e: Exception) {
-            trySend(StreamEvent.Error("Error: ${e.message ?: "Unknown error"}"))
+            trySend(StreamEvent.Error(getErrorMessage(e)))
         }
 
         awaitClose {
