@@ -110,7 +110,7 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Bottom
+                verticalAlignment = Alignment.Top
             ) {
                 ExposedDropdownMenuBox(
                     expanded = expandedModelDropdown,
@@ -156,7 +156,7 @@ fun SettingsScreen(
                 OutlinedButton(
                     onClick = viewModel::fetchModels,
                     enabled = uiState.isConfigValid && !uiState.isFetchingModels,
-                    modifier = Modifier.height(56.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 ) {
                     if (uiState.isFetchingModels) {
                         CircularProgressIndicator(
