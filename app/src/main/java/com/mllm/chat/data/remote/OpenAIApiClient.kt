@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -215,5 +216,5 @@ class OpenAIApiClient @Inject constructor() {
         awaitClose {
             call.cancel()
         }
-    }
+    }.flowOn(Dispatchers.IO)
 }
