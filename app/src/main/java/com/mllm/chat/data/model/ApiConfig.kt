@@ -5,8 +5,9 @@ data class ApiConfig(
     val apiKey: String = "",
     val model: String = "gpt-4",
     val systemPrompt: String = "",
-    val temperature: Float = 0.7f,
-    val maxTokens: Int? = null
+    val temperature: Float? = null,
+    val maxTokens: Int? = null,
+    val providerName: String = "Default"
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()

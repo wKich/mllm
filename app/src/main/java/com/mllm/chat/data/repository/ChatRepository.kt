@@ -26,6 +26,25 @@ class ChatRepository @Inject constructor(
     suspend fun testConnection(config: ApiConfig): ApiResult<String> =
         apiClient.testConnection(config)
 
+    suspend fun fetchModels(config: ApiConfig): ApiResult<List<String>> =
+        apiClient.fetchModels(config)
+
+    // Provider management
+    fun getProviders(): List<com.mllm.chat.data.model.Provider> =
+        securePreferences.getProviders()
+
+    fun saveProvider(provider: com.mllm.chat.data.model.Provider) =
+        securePreferences.addProvider(provider)
+
+    fun deleteProvider(providerId: String) =
+        securePreferences.deleteProvider(providerId)
+
+    fun setActiveProvider(providerId: String) =
+        securePreferences.setActiveProviderId(providerId)
+
+    fun getActiveProvider(): com.mllm.chat.data.model.Provider? =
+        securePreferences.getActiveProvider()
+
     // Conversations
     fun getAllConversations(): Flow<List<Conversation>> =
         conversationDao.getAllConversations()

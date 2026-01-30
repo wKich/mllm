@@ -217,4 +217,45 @@ class OpenAIApiClient @Inject constructor() {
             call.cancel()
         }
     }.flowOn(Dispatchers.IO)
+
+    suspend fun fetchModels(config: ApiConfig): ApiResult<List<String>> = withContext(Dispatchers.IO) {
+        try {
+            val httpRequest = Request.Builder()
+                .url("${config.normalizedBaseUrl()}/models")
+                .addHeader("Authorization", "Bearer ${config.apiKey}")
+                .addHeader("Content-Type", "application/json")
+                .get()
+                .build()
+
+            val response = client.newCall(httpRequest).execute()
+            val responseBody = response.body?.string()
+
+            when {
+                response.isSuccessful && responseBody != null -> {
+                    try {
+                        val modelsResponse = gson.fromJson(responseBody, com.mllm.chat.data.model.ModelsResponse::class.java)
+                        val models = modelsResponse.data.map { it.id }.sorted()
+                        ApiResult.Success(models)
+                    } catch (e: Exception) {
+                        ApiResult.Error("Failed to parse models response: ${e.message}")
+                    }
+                }
+                response.code == 401 -> {
+                    ApiResult.Error("Authentication failed. Please check your API key.", 401)
+                }
+                response.code == 404 -> {
+                    ApiResult.Error("Models endpoint not found.", 404)
+                }
+                else -> {
+                    val errorResponse = try {
+                        gson.fromJson(responseBody, ErrorResponse::class.java)
+                    } catch (e: Exception) { null }
+                    val errorMessage = errorResponse?.error?.message ?: "API error: ${response.code}"
+                    ApiResult.Error(errorMessage, response.code)
+                }
+            }
+        } catch (e: Exception) {
+            ApiResult.Error(getErrorMessage(e))
+        }
+    }
 }

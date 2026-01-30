@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.mllm.chat.data.model.ApiConfig
+import com.mllm.chat.data.model.Provider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,6 +28,8 @@ class SecurePreferences @Inject constructor(
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
+    private val gson = Gson()
+
     companion object {
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_API_KEY = "api_key"
@@ -32,6 +37,9 @@ class SecurePreferences @Inject constructor(
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_MAX_TOKENS = "max_tokens"
+        private const val KEY_PROVIDER_NAME = "provider_name"
+        private const val KEY_PROVIDERS = "providers"
+        private const val KEY_ACTIVE_PROVIDER_ID = "active_provider_id"
     }
 
     fun saveApiConfig(config: ApiConfig) {
@@ -40,7 +48,12 @@ class SecurePreferences @Inject constructor(
             putString(KEY_API_KEY, config.apiKey)
             putString(KEY_MODEL, config.model)
             putString(KEY_SYSTEM_PROMPT, config.systemPrompt)
-            putFloat(KEY_TEMPERATURE, config.temperature)
+            putString(KEY_PROVIDER_NAME, config.providerName)
+            if (config.temperature != null) {
+                putFloat(KEY_TEMPERATURE, config.temperature)
+            } else {
+                remove(KEY_TEMPERATURE)
+            }
             if (config.maxTokens != null) {
                 putInt(KEY_MAX_TOKENS, config.maxTokens)
             } else {
@@ -56,12 +69,64 @@ class SecurePreferences @Inject constructor(
             apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
             model = securePrefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
             systemPrompt = securePrefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
-            temperature = securePrefs.getFloat(KEY_TEMPERATURE, 0.7f),
-            maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null
+            temperature = if (securePrefs.contains(KEY_TEMPERATURE)) securePrefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
+            maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null,
+            providerName = securePrefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
         )
     }
 
     fun clearApiKey() {
         securePrefs.edit().remove(KEY_API_KEY).apply()
+    }
+
+    // Provider management
+    fun saveProviders(providers: List<Provider>) {
+        val json = gson.toJson(providers)
+        securePrefs.edit().putString(KEY_PROVIDERS, json).apply()
+    }
+
+    fun getProviders(): List<Provider> {
+        val json = securePrefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
+        val type = object : TypeToken<List<Provider>>() {}.type
+        return try {
+            gson.fromJson(json, type)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addProvider(provider: Provider) {
+        val providers = getProviders().toMutableList()
+        providers.removeIf { it.id == provider.id }
+        providers.add(provider)
+        saveProviders(providers)
+    }
+
+    fun deleteProvider(providerId: String) {
+        val providers = getProviders().toMutableList()
+        providers.removeIf { it.id == providerId }
+        saveProviders(providers)
+
+        // If we deleted the active provider, clear the active provider ID
+        if (getActiveProviderId() == providerId) {
+            setActiveProviderId(null)
+        }
+    }
+
+    fun setActiveProviderId(providerId: String?) {
+        if (providerId != null) {
+            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).apply()
+        } else {
+            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).apply()
+        }
+    }
+
+    fun getActiveProviderId(): String? {
+        return securePrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+    }
+
+    fun getActiveProvider(): Provider? {
+        val activeId = getActiveProviderId() ?: return null
+        return getProviders().find { it.id == activeId }
     }
 }

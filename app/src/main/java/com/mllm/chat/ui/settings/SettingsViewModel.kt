@@ -18,10 +18,13 @@ data class SettingsUiState(
     val model: String = "gpt-4",
     val systemPrompt: String = "",
     val temperature: Float = 0.7f,
+    val useTemperature: Boolean = false,
     val maxTokens: String = "",
     val isTesting: Boolean = false,
     val testResult: TestResult? = null,
-    val isSaved: Boolean = false
+    val isSaved: Boolean = false,
+    val availableModels: List<String> = emptyList(),
+    val isFetchingModels: Boolean = false
 ) {
     val isConfigValid: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -51,7 +54,8 @@ class SettingsViewModel @Inject constructor(
             apiKey = config.apiKey,
             model = config.model,
             systemPrompt = config.systemPrompt,
-            temperature = config.temperature,
+            temperature = config.temperature ?: 0.7f,
+            useTemperature = config.temperature != null,
             maxTokens = config.maxTokens?.toString() ?: ""
         )
     }
@@ -90,6 +94,13 @@ class SettingsViewModel @Inject constructor(
     fun updateTemperature(value: Float) {
         _uiState.value = _uiState.value.copy(
             temperature = value,
+            isSaved = false
+        )
+    }
+
+    fun toggleUseTemperature(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            useTemperature = enabled,
             isSaved = false
         )
     }
@@ -135,9 +146,34 @@ class SettingsViewModel @Inject constructor(
             apiKey = state.apiKey.trim(),
             model = state.model.trim(),
             systemPrompt = state.systemPrompt.trim(),
-            temperature = state.temperature,
+            temperature = if (state.useTemperature) state.temperature else null,
             maxTokens = state.maxTokens.toIntOrNull()
         )
+    }
+
+    fun fetchModels() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isFetchingModels = true)
+
+            val config = createConfig()
+            val result = repository.fetchModels(config)
+
+            _uiState.value = when (result) {
+                is ApiResult.Success -> {
+                    _uiState.value.copy(
+                        availableModels = result.data,
+                        isFetchingModels = false,
+                        testResult = TestResult.Success("Found ${result.data.size} models")
+                    )
+                }
+                is ApiResult.Error -> {
+                    _uiState.value.copy(
+                        isFetchingModels = false,
+                        testResult = TestResult.Error("Failed to fetch models: ${result.message}")
+                    )
+                }
+            }
+        }
     }
 
     fun isConfigValid(): Boolean = _uiState.value.isConfigValid

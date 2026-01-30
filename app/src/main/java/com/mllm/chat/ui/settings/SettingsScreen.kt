@@ -107,36 +107,64 @@ fun SettingsScreen(
             )
 
             // Model Selection
-            ExposedDropdownMenuBox(
-                expanded = expandedModelDropdown,
-                onExpandedChange = { expandedModelDropdown = it }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                OutlinedTextField(
-                    value = uiState.model,
-                    onValueChange = viewModel::updateModel,
-                    label = { Text("Model") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModelDropdown)
-                    },
-                    singleLine = true,
-                    supportingText = { Text("Select or type custom model name") }
-                )
-
-                ExposedDropdownMenu(
+                ExposedDropdownMenuBox(
                     expanded = expandedModelDropdown,
-                    onDismissRequest = { expandedModelDropdown = false }
+                    onExpandedChange = { expandedModelDropdown = it },
+                    modifier = Modifier.weight(1f)
                 ) {
-                    DEFAULT_MODELS.forEach { model ->
-                        DropdownMenuItem(
-                            text = { Text(model) },
-                            onClick = {
-                                viewModel.updateModel(model)
-                                expandedModelDropdown = false
-                            }
+                    OutlinedTextField(
+                        value = uiState.model,
+                        onValueChange = viewModel::updateModel,
+                        label = { Text("Model") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModelDropdown)
+                        },
+                        singleLine = true,
+                        supportingText = { Text("Select or type custom model name") }
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = expandedModelDropdown,
+                        onDismissRequest = { expandedModelDropdown = false }
+                    ) {
+                        val modelsToShow = if (uiState.availableModels.isNotEmpty()) {
+                            uiState.availableModels
+                        } else {
+                            DEFAULT_MODELS
+                        }
+
+                        modelsToShow.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model) },
+                                onClick = {
+                                    viewModel.updateModel(model)
+                                    expandedModelDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::fetchModels,
+                    enabled = uiState.isConfigValid && !uiState.isFetchingModels,
+                    modifier = Modifier.height(56.dp)
+                ) {
+                    if (uiState.isFetchingModels) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
                         )
+                    } else {
+                        Text("Fetch")
                     }
                 }
             }
@@ -215,22 +243,36 @@ fun SettingsScreen(
             Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Temperature")
-                    Text("%.1f".format(uiState.temperature))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Temperature")
+                        Text(
+                            text = if (uiState.useTemperature) "%.1f".format(uiState.temperature) else "Not set",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = uiState.useTemperature,
+                        onCheckedChange = viewModel::toggleUseTemperature
+                    )
                 }
-                Slider(
-                    value = uiState.temperature,
-                    onValueChange = viewModel::updateTemperature,
-                    valueRange = 0f..1f,
-                    steps = 9
-                )
-                Text(
-                    text = "Lower = more focused, Higher = more creative",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (uiState.useTemperature) {
+                    Slider(
+                        value = uiState.temperature,
+                        onValueChange = viewModel::updateTemperature,
+                        valueRange = 0f..1f,
+                        steps = 9,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Text(
+                        text = "Lower = more focused, Higher = more creative",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // Max Tokens

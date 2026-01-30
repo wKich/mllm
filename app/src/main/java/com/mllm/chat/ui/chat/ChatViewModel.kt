@@ -22,7 +22,9 @@ data class ChatUiState(
     val isStreaming: Boolean = false,
     val isOffline: Boolean = false,
     val isConfigured: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val currentModel: String = "",
+    val availableModels: List<String> = emptyList()
 )
 
 @HiltViewModel
@@ -46,11 +48,31 @@ class ChatViewModel @Inject constructor(
 
     private fun checkConfiguration() {
         val config = repository.getApiConfig()
-        _uiState.value = _uiState.value.copy(isConfigured = config.isConfigured)
+        _uiState.value = _uiState.value.copy(
+            isConfigured = config.isConfigured,
+            currentModel = config.model
+        )
     }
 
     fun refreshConfiguration() {
         checkConfiguration()
+    }
+
+    fun switchModel(newModel: String) {
+        val config = repository.getApiConfig()
+        val updatedConfig = config.copy(model = newModel)
+        repository.saveApiConfig(updatedConfig)
+        _uiState.value = _uiState.value.copy(currentModel = newModel)
+    }
+
+    fun loadAvailableModels() {
+        viewModelScope.launch {
+            val config = repository.getApiConfig()
+            val result = repository.fetchModels(config)
+            if (result is com.mllm.chat.data.remote.ApiResult.Success) {
+                _uiState.value = _uiState.value.copy(availableModels = result.data)
+            }
+        }
     }
 
     private fun observeNetworkStatus() {
