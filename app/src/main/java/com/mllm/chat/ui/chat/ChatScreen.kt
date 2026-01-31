@@ -1,10 +1,13 @@
 package com.mllm.chat.ui.chat
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,6 +32,7 @@ fun ChatScreen(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val listState = rememberLazyListState()
     var showClearDialog by remember { mutableStateOf(false) }
+    var showModelSelector by remember { mutableStateOf(false) }
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(uiState.messages.size, uiState.isStreaming) {
@@ -72,13 +76,28 @@ fun ChatScreen(
                 Column {
                     TopAppBar(
                         title = {
-                            val conversation = uiState.conversations.find {
-                                it.id == uiState.currentConversationId
+                            Column {
+                                val conversation = uiState.conversations.find {
+                                    it.id == uiState.currentConversationId
+                                }
+                                Text(
+                                    text = conversation?.title ?: "AI Chat",
+                                    maxLines = 1
+                                )
+                                if (uiState.currentModel.isNotBlank()) {
+                                    Row(
+                                        modifier = Modifier.padding(top = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = uiState.currentModel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clickable { showModelSelector = true }
+                                        )
+                                    }
+                                }
                             }
-                            Text(
-                                text = conversation?.title ?: "AI Chat",
-                                maxLines = 1
-                            )
                         },
                         navigationIcon = {
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
@@ -183,6 +202,20 @@ fun ChatScreen(
                         Text("Cancel")
                     }
                 }
+            )
+        }
+
+        // Model selector dialog
+        if (showModelSelector) {
+            ModelSelectorDialog(
+                currentModel = uiState.currentModel,
+                availableModels = uiState.availableModels,
+                onModelSelected = { model ->
+                    viewModel.switchModel(model)
+                    showModelSelector = false
+                },
+                onDismiss = { showModelSelector = false },
+                onFetchModels = { viewModel.loadAvailableModels() }
             )
         }
     }
@@ -349,4 +382,92 @@ private fun EmptyConversation(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelSelectorDialog(
+    currentModel: String,
+    availableModels: List<String>,
+    onModelSelected: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onFetchModels: () -> Unit
+) {
+    var customModel by remember { mutableStateOf(currentModel) }
+    val modelsToShow = if (availableModels.isNotEmpty()) {
+        availableModels
+    } else {
+        com.mllm.chat.data.model.DEFAULT_MODELS
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Model") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (availableModels.isEmpty()) {
+                    TextButton(onClick = onFetchModels) {
+                        Text("Fetch available models")
+                    }
+                }
+
+                modelsToShow.forEach { model ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onModelSelected(model) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = model == currentModel,
+                            onClick = { onModelSelected(model) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = model,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text(
+                    text = "Custom Model",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                OutlinedTextField(
+                    value = customModel,
+                    onValueChange = { customModel = it },
+                    label = { Text("Model name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (customModel.isNotBlank()) {
+                        onModelSelected(customModel)
+                    }
+                }
+            ) {
+                Text("Apply")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
