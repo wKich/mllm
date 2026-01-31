@@ -97,6 +97,10 @@ class ChatRepository @Inject constructor(
         messageDao.updateMessageContent(id, content, isStreaming)
     }
 
+    suspend fun updateMessageContentWithReasoning(id: Long, content: String, reasoningContent: String?, isStreaming: Boolean) {
+        messageDao.updateMessageContentWithReasoning(id, content, reasoningContent, isStreaming)
+    }
+
     suspend fun updateMessageError(id: Long, isError: Boolean) {
         messageDao.updateMessageError(id, isError)
     }

@@ -23,6 +23,7 @@ data class Message(
     val conversationId: Long,
     val role: String, // "user", "assistant", "system"
     val content: String,
+    val reasoningContent: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val isStreaming: Boolean = false,
     val isError: Boolean = false

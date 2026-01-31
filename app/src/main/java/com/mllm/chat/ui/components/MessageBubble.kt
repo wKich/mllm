@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -43,6 +45,7 @@ fun MessageBubble(
     val context = LocalContext.current
 
     var showActions by remember { mutableStateOf(false) }
+    var showReasoning by remember { mutableStateOf(false) }
 
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.userBubble
@@ -83,6 +86,70 @@ fun MessageBubble(
                 .padding(12.dp)
         ) {
             Column {
+                // Show reasoning if available
+                if (!message.reasoningContent.isNullOrEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { showReasoning = !showReasoning },
+                            contentPadding = PaddingValues(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (showReasoning) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (showReasoning) "Hide reasoning" else "Show reasoning",
+                                modifier = Modifier.size(16.dp),
+                                tint = textColor.copy(alpha = 0.7f)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (showReasoning) "Hide reasoning" else "Show reasoning",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = showReasoning) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        ) {
+                            Surface(
+                                color = textColor.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(
+                                        text = "Reasoning",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = textColor.copy(alpha = 0.7f),
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    if (message.isStreaming) {
+                                        StreamingContent(
+                                            content = message.reasoningContent ?: "",
+                                            textColor = textColor.copy(alpha = 0.8f),
+                                            context = context
+                                        )
+                                    } else {
+                                        MarkdownContent(
+                                            content = message.reasoningContent ?: "",
+                                            textColor = textColor.copy(alpha = 0.8f),
+                                            context = context
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Main content
                 if (message.isStreaming) {
                     StreamingContent(
                         content = message.content,

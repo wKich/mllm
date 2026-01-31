@@ -35,7 +35,9 @@ data class ChunkChoice(
 
 data class Delta(
     val role: String?,
-    val content: String?
+    val content: String?,
+    @SerializedName("reasoning_content")
+    val reasoningContent: String?
 )
 
 // Non-streaming response (for connection test)

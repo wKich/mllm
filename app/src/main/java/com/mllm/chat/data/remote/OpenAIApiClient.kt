@@ -28,6 +28,7 @@ sealed class ApiResult<out T> {
 
 sealed class StreamEvent {
     data class Content(val text: String) : StreamEvent()
+    data class Reasoning(val text: String) : StreamEvent()
     data class Error(val message: String) : StreamEvent()
     object Done : StreamEvent()
 }
@@ -189,9 +190,18 @@ class OpenAIApiClient @Inject constructor() {
 
                         try {
                             val chunk = gson.fromJson(data, ChatCompletionChunk::class.java)
-                            val content = chunk.choices?.firstOrNull()?.delta?.content
+                            val delta = chunk.choices?.firstOrNull()?.delta
+
+                            // Handle regular content
+                            val content = delta?.content
                             if (!content.isNullOrEmpty()) {
                                 trySend(StreamEvent.Content(content))
+                            }
+
+                            // Handle reasoning content
+                            val reasoningContent = delta?.reasoningContent
+                            if (!reasoningContent.isNullOrEmpty()) {
+                                trySend(StreamEvent.Reasoning(reasoningContent))
                             }
 
                             // Check for finish reason

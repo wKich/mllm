@@ -39,6 +39,7 @@ class ChatViewModel @Inject constructor(
     private var streamingJob: Job? = null
     private var currentAssistantMessageId: Long? = null
     private var currentStreamingContent = StringBuilder()
+    private var currentStreamingReasoning = StringBuilder()
 
     init {
         checkConfiguration()
@@ -173,6 +174,7 @@ class ChatViewModel @Inject constructor(
     private suspend fun startStreaming(conversationId: Long) {
         // Create placeholder for assistant message
         currentStreamingContent = StringBuilder()
+        currentStreamingReasoning = StringBuilder()
         currentAssistantMessageId = repository.addMessage(
             conversationId,
             MessageRole.ASSISTANT.value,
@@ -192,9 +194,21 @@ class ChatViewModel @Inject constructor(
                     is StreamEvent.Content -> {
                         currentStreamingContent.append(event.text)
                         currentAssistantMessageId?.let { messageId ->
-                            repository.updateMessageContent(
+                            repository.updateMessageContentWithReasoning(
                                 messageId,
                                 currentStreamingContent.toString(),
+                                currentStreamingReasoning.toString().takeIf { it.isNotEmpty() },
+                                isStreaming = true
+                            )
+                        }
+                    }
+                    is StreamEvent.Reasoning -> {
+                        currentStreamingReasoning.append(event.text)
+                        currentAssistantMessageId?.let { messageId ->
+                            repository.updateMessageContentWithReasoning(
+                                messageId,
+                                currentStreamingContent.toString(),
+                                currentStreamingReasoning.toString(),
                                 isStreaming = true
                             )
                         }
@@ -215,9 +229,10 @@ class ChatViewModel @Inject constructor(
                     }
                     StreamEvent.Done -> {
                         currentAssistantMessageId?.let { messageId ->
-                            repository.updateMessageContent(
+                            repository.updateMessageContentWithReasoning(
                                 messageId,
                                 currentStreamingContent.toString(),
+                                currentStreamingReasoning.toString().takeIf { it.isNotEmpty() },
                                 isStreaming = false
                             )
                         }
@@ -234,9 +249,10 @@ class ChatViewModel @Inject constructor(
 
         currentAssistantMessageId?.let { messageId ->
             viewModelScope.launch {
-                repository.updateMessageContent(
+                repository.updateMessageContentWithReasoning(
                     messageId,
                     currentStreamingContent.toString() + " [stopped]",
+                    currentStreamingReasoning.toString().takeIf { it.isNotEmpty() },
                     isStreaming = false
                 )
             }
