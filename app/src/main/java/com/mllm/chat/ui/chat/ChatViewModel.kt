@@ -49,9 +49,11 @@ class ChatViewModel @Inject constructor(
 
     private fun checkConfiguration() {
         val config = repository.getApiConfig()
+        val activeProvider = repository.getActiveProvider()
         _uiState.value = _uiState.value.copy(
             isConfigured = config.isConfigured,
-            currentModel = config.model
+            currentModel = config.model,
+            availableModels = activeProvider?.availableModels ?: emptyList()
         )
     }
 
