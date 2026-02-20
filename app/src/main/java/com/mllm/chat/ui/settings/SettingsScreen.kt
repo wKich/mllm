@@ -1,11 +1,16 @@
 package com.mllm.chat.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -18,6 +23,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mllm.chat.data.model.DEFAULT_MODELS
+import com.mllm.chat.data.model.Provider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,8 +32,6 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showApiKey by remember { mutableStateOf(false) }
-    var expandedModelDropdown by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -37,148 +41,263 @@ fun SettingsScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    TextButton(
-                        onClick = {
-                            viewModel.saveConfig()
-                            onNavigateBack()
-                        },
-                        enabled = uiState.isConfigValid
-                    ) {
-                        Text("Save")
-                    }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = viewModel::openAddProviderDialog) {
+                Icon(Icons.Default.Add, contentDescription = "Add Provider")
+            }
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // API Configuration Section
             Text(
-                text = "API Configuration",
+                text = "Inference Providers",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // Base URL
-            OutlinedTextField(
-                value = uiState.baseUrl,
-                onValueChange = viewModel::updateBaseUrl,
-                label = { Text("Base URL") },
-                placeholder = { Text("https://api.openai.com/v1") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("OpenAI-compatible API endpoint") }
-            )
-
-            // API Key
-            OutlinedTextField(
-                value = uiState.apiKey,
-                onValueChange = viewModel::updateApiKey,
-                label = { Text("API Key") },
-                placeholder = { Text("sk-...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (showApiKey) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    IconButton(onClick = { showApiKey = !showApiKey }) {
-                        Icon(
-                            imageVector = if (showApiKey) {
-                                Icons.Default.VisibilityOff
-                            } else {
-                                Icons.Default.Visibility
-                            },
-                            contentDescription = if (showApiKey) "Hide" else "Show"
-                        )
-                    }
-                },
-                supportingText = { Text("Stored securely on device") }
-            )
-
-            // Model Selection
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                ExposedDropdownMenuBox(
-                    expanded = expandedModelDropdown,
-                    onExpandedChange = { expandedModelDropdown = it },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    OutlinedTextField(
-                        value = uiState.model,
-                        onValueChange = viewModel::updateModel,
-                        label = { Text("Model") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModelDropdown)
-                        },
-                        singleLine = true,
-                        supportingText = { Text("Select or type custom model name") }
+            if (uiState.providers.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
-
-                    ExposedDropdownMenu(
-                        expanded = expandedModelDropdown,
-                        onDismissRequest = { expandedModelDropdown = false }
-                    ) {
-                        val modelsToShow = if (uiState.availableModels.isNotEmpty()) {
-                            uiState.availableModels
-                        } else {
-                            DEFAULT_MODELS
-                        }
-
-                        modelsToShow.forEach { model ->
-                            DropdownMenuItem(
-                                text = { Text(model) },
-                                onClick = {
-                                    viewModel.updateModel(model)
-                                    expandedModelDropdown = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = viewModel::fetchModels,
-                    enabled = uiState.isConfigValid && !uiState.isFetchingModels,
-                    modifier = Modifier.padding(top = 8.dp)
                 ) {
-                    if (uiState.isFetchingModels) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
+                    Text(
+                        text = "No providers configured. Tap + to add one.",
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(uiState.providers, key = { it.id }) { provider ->
+                        ProviderCard(
+                            provider = provider,
+                            isActive = provider.id == uiState.activeProviderId,
+                            onSetActive = { viewModel.setActiveProvider(provider.id) },
+                            onEdit = { viewModel.openEditProviderDialog(provider) },
+                            onDelete = { viewModel.deleteProvider(provider.id) }
                         )
-                    } else {
-                        Text("Fetch")
                     }
                 }
             }
+        }
+    }
 
-            // Test Connection Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+    if (uiState.showProviderDialog) {
+        ProviderDialog(
+            uiState = uiState,
+            isEditing = uiState.editingProviderId != null,
+            viewModel = viewModel,
+            onDismiss = viewModel::dismissProviderDialog
+        )
+    }
+}
+
+@Composable
+private fun ProviderCard(
+    provider: Provider,
+    isActive: Boolean,
+    onSetActive: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = if (isActive) {
+            CardDefaults.outlinedCardBorder()
+        } else null
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = isActive,
+                onClick = onSetActive
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = provider.name,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = provider.baseUrl,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val modelLabel = provider.selectedModel.ifBlank {
+                    provider.availableModels.firstOrNull() ?: "gpt-4"
+                }
+                Text(
+                    text = modelLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (isActive) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text("Active", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit provider")
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete provider",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProviderDialog(
+    uiState: SettingsUiState,
+    isEditing: Boolean,
+    viewModel: SettingsViewModel,
+    onDismiss: () -> Unit
+) {
+    var showApiKey by remember { mutableStateOf(false) }
+    var expandedModelDropdown by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isEditing) "Edit Provider" else "Add Provider") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Provider Name
+                OutlinedTextField(
+                    value = uiState.dialogName,
+                    onValueChange = viewModel::updateDialogName,
+                    label = { Text("Provider Name") },
+                    placeholder = { Text("My Provider") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Base URL
+                OutlinedTextField(
+                    value = uiState.dialogBaseUrl,
+                    onValueChange = viewModel::updateDialogBaseUrl,
+                    label = { Text("Base URL") },
+                    placeholder = { Text("https://api.openai.com/v1") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("OpenAI-compatible API endpoint") }
+                )
+
+                // API Key
+                OutlinedTextField(
+                    value = uiState.dialogApiKey,
+                    onValueChange = viewModel::updateDialogApiKey,
+                    label = { Text("API Key") },
+                    placeholder = { Text("sk-...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = if (showApiKey) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showApiKey = !showApiKey }) {
+                            Icon(
+                                imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showApiKey) "Hide" else "Show"
+                            )
+                        }
+                    },
+                    supportingText = { Text("Stored securely on device") }
+                )
+
+                // Model Selection
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    ExposedDropdownMenuBox(
+                        expanded = expandedModelDropdown,
+                        onExpandedChange = { expandedModelDropdown = it },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        OutlinedTextField(
+                            value = uiState.dialogModel,
+                            onValueChange = viewModel::updateDialogModel,
+                            label = { Text("Model") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModelDropdown)
+                            },
+                            singleLine = true,
+                            supportingText = { Text("Select or type custom model name") }
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedModelDropdown,
+                            onDismissRequest = { expandedModelDropdown = false }
+                        ) {
+                            val modelsToShow = uiState.dialogAvailableModels.ifEmpty { DEFAULT_MODELS }
+                            modelsToShow.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text(model) },
+                                    onClick = {
+                                        viewModel.updateDialogModel(model)
+                                        expandedModelDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::fetchModels,
+                        enabled = uiState.isDialogConfigValid && !uiState.isFetchingModels,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        if (uiState.isFetchingModels) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Fetch")
+                        }
+                    }
+                }
+
+                // Test Connection
                 Button(
                     onClick = viewModel::testConnection,
-                    enabled = uiState.isConfigValid && !uiState.isTesting,
-                    modifier = Modifier.weight(1f)
+                    enabled = uiState.isDialogConfigValid && !uiState.isTesting,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     if (uiState.isTesting) {
                         CircularProgressIndicator(
@@ -190,104 +309,109 @@ fun SettingsScreen(
                     }
                     Text(if (uiState.isTesting) "Testing..." else "Test Connection")
                 }
-            }
 
-            // Test Result
-            uiState.testResult?.let { result ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = when (result) {
-                            is TestResult.Success -> MaterialTheme.colorScheme.primaryContainer
-                            is TestResult.Error -> MaterialTheme.colorScheme.errorContainer
-                        }
-                    )
-                ) {
-                    Text(
-                        text = when (result) {
-                            is TestResult.Success -> result.message
-                            is TestResult.Error -> result.message
-                        },
-                        modifier = Modifier.padding(16.dp),
-                        color = when (result) {
-                            is TestResult.Success -> MaterialTheme.colorScheme.onPrimaryContainer
-                            is TestResult.Error -> MaterialTheme.colorScheme.onErrorContainer
-                        }
-                    )
-                }
-            }
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Optional Settings Section
-            Text(
-                text = "Optional Settings",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            // System Prompt
-            OutlinedTextField(
-                value = uiState.systemPrompt,
-                onValueChange = viewModel::updateSystemPrompt,
-                label = { Text("System Prompt") },
-                placeholder = { Text("You are a helpful assistant...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp),
-                maxLines = 5,
-                supportingText = { Text("Instructions sent with every message") }
-            )
-
-            // Temperature
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Temperature")
+                // Test Result
+                uiState.testResult?.let { result ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (result) {
+                                is TestResult.Success -> MaterialTheme.colorScheme.primaryContainer
+                                is TestResult.Error -> MaterialTheme.colorScheme.errorContainer
+                            }
+                        )
+                    ) {
                         Text(
-                            text = if (uiState.useTemperature) "%.1f".format(uiState.temperature) else "Not set",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = when (result) {
+                                is TestResult.Success -> result.message
+                                is TestResult.Error -> result.message
+                            },
+                            modifier = Modifier.padding(12.dp),
+                            color = when (result) {
+                                is TestResult.Success -> MaterialTheme.colorScheme.onPrimaryContainer
+                                is TestResult.Error -> MaterialTheme.colorScheme.onErrorContainer
+                            }
                         )
                     }
-                    Switch(
-                        checked = uiState.useTemperature,
-                        onCheckedChange = viewModel::toggleUseTemperature
-                    )
                 }
-                if (uiState.useTemperature) {
-                    Slider(
-                        value = uiState.temperature,
-                        onValueChange = viewModel::updateTemperature,
-                        valueRange = 0f..1f,
-                        steps = 9,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Text(
-                        text = "Lower = more focused, Higher = more creative",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Optional Settings",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // System Prompt
+                OutlinedTextField(
+                    value = uiState.dialogSystemPrompt,
+                    onValueChange = viewModel::updateDialogSystemPrompt,
+                    label = { Text("System Prompt") },
+                    placeholder = { Text("You are a helpful assistant...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp),
+                    maxLines = 4,
+                    supportingText = { Text("Instructions sent with every message") }
+                )
+
+                // Temperature
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Temperature")
+                            Text(
+                                text = if (uiState.dialogUseTemperature) "%.1f".format(uiState.dialogTemperature) else "Not set",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.dialogUseTemperature,
+                            onCheckedChange = viewModel::toggleDialogUseTemperature
+                        )
+                    }
+                    if (uiState.dialogUseTemperature) {
+                        Slider(
+                            value = uiState.dialogTemperature,
+                            onValueChange = viewModel::updateDialogTemperature,
+                            valueRange = 0f..1f,
+                            steps = 9,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
+
+                // Max Tokens
+                OutlinedTextField(
+                    value = uiState.dialogMaxTokens,
+                    onValueChange = viewModel::updateDialogMaxTokens,
+                    label = { Text("Max Tokens (optional)") },
+                    placeholder = { Text("Leave empty for default") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = { Text("Maximum response length") }
+                )
             }
-
-            // Max Tokens
-            OutlinedTextField(
-                value = uiState.maxTokens,
-                onValueChange = viewModel::updateMaxTokens,
-                label = { Text("Max Tokens (optional)") },
-                placeholder = { Text("Leave empty for default") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                supportingText = { Text("Maximum response length") }
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
+        },
+        confirmButton = {
+            TextButton(
+                onClick = viewModel::saveProvider,
+                enabled = uiState.isDialogConfigValid
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
-    }
+    )
 }
