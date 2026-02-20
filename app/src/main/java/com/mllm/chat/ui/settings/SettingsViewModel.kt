@@ -3,6 +3,7 @@ package com.mllm.chat.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mllm.chat.data.model.ApiConfig
+import com.mllm.chat.data.model.Provider
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -10,24 +11,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 data class SettingsUiState(
-    val baseUrl: String = "https://api.openai.com/v1",
-    val apiKey: String = "",
-    val model: String = "gpt-4",
-    val systemPrompt: String = "",
-    val temperature: Float = 0.7f,
-    val useTemperature: Boolean = false,
-    val maxTokens: String = "",
+    val providers: List<Provider> = emptyList(),
+    val activeProviderId: String? = null,
+    val showProviderDialog: Boolean = false,
+    val editingProviderId: String? = null,
+    val dialogName: String = "",
+    val dialogBaseUrl: String = "https://api.openai.com/v1",
+    val dialogApiKey: String = "",
+    val dialogModel: String = "gpt-4",
+    val dialogSystemPrompt: String = "",
+    val dialogTemperature: Float = 0.7f,
+    val dialogUseTemperature: Boolean = false,
+    val dialogMaxTokens: String = "",
+    val dialogAvailableModels: List<String> = emptyList(),
     val isTesting: Boolean = false,
     val testResult: TestResult? = null,
-    val isSaved: Boolean = false,
-    val availableModels: List<String> = emptyList(),
     val isFetchingModels: Boolean = false
 ) {
-    val isConfigValid: Boolean
-        get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
+    val isDialogConfigValid: Boolean
+        get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank() && dialogModel.isNotBlank()
 }
 
 sealed class TestResult {
@@ -44,81 +50,138 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        loadConfig()
+        loadProviders()
     }
 
-    private fun loadConfig() {
-        val config = repository.getApiConfig()
-        _uiState.value = SettingsUiState(
-            baseUrl = config.baseUrl,
-            apiKey = config.apiKey,
-            model = config.model,
-            systemPrompt = config.systemPrompt,
-            temperature = config.temperature ?: 0.7f,
-            useTemperature = config.temperature != null,
-            maxTokens = config.maxTokens?.toString() ?: ""
-        )
-    }
-
-    fun updateBaseUrl(value: String) {
+    private fun loadProviders() {
+        val providers = repository.getProviders()
+        val activeId = repository.getActiveProvider()?.id
         _uiState.value = _uiState.value.copy(
-            baseUrl = value,
-            testResult = null,
-            isSaved = false
+            providers = providers,
+            activeProviderId = activeId
         )
     }
 
-    fun updateApiKey(value: String) {
+    fun openAddProviderDialog() {
         _uiState.value = _uiState.value.copy(
-            apiKey = value,
-            testResult = null,
-            isSaved = false
+            showProviderDialog = true,
+            editingProviderId = null,
+            dialogName = "",
+            dialogBaseUrl = "https://api.openai.com/v1",
+            dialogApiKey = "",
+            dialogModel = "gpt-4",
+            dialogSystemPrompt = "",
+            dialogTemperature = 0.7f,
+            dialogUseTemperature = false,
+            dialogMaxTokens = "",
+            dialogAvailableModels = emptyList(),
+            testResult = null
         )
     }
 
-    fun updateModel(value: String) {
+    fun openEditProviderDialog(provider: Provider) {
         _uiState.value = _uiState.value.copy(
-            model = value,
-            testResult = null,
-            isSaved = false
+            showProviderDialog = true,
+            editingProviderId = provider.id,
+            dialogName = provider.name,
+            dialogBaseUrl = provider.baseUrl,
+            dialogApiKey = provider.apiKey,
+            dialogModel = provider.selectedModel.ifBlank {
+                provider.availableModels.firstOrNull() ?: "gpt-4"
+            },
+            dialogSystemPrompt = provider.systemPrompt,
+            dialogTemperature = provider.temperature ?: 0.7f,
+            dialogUseTemperature = provider.temperature != null,
+            dialogMaxTokens = provider.maxTokens?.toString() ?: "",
+            dialogAvailableModels = provider.availableModels,
+            testResult = null
         )
     }
 
-    fun updateSystemPrompt(value: String) {
-        _uiState.value = _uiState.value.copy(
-            systemPrompt = value,
-            isSaved = false
-        )
+    fun dismissProviderDialog() {
+        _uiState.value = _uiState.value.copy(showProviderDialog = false)
     }
 
-    fun updateTemperature(value: Float) {
-        _uiState.value = _uiState.value.copy(
-            temperature = value,
-            isSaved = false
-        )
+    fun updateDialogName(value: String) {
+        _uiState.value = _uiState.value.copy(dialogName = value)
     }
 
-    fun toggleUseTemperature(enabled: Boolean) {
-        _uiState.value = _uiState.value.copy(
-            useTemperature = enabled,
-            isSaved = false
-        )
+    fun updateDialogBaseUrl(value: String) {
+        _uiState.value = _uiState.value.copy(dialogBaseUrl = value, testResult = null)
     }
 
-    fun updateMaxTokens(value: String) {
-        _uiState.value = _uiState.value.copy(
-            maxTokens = value.filter { it.isDigit() },
-            isSaved = false
+    fun updateDialogApiKey(value: String) {
+        _uiState.value = _uiState.value.copy(dialogApiKey = value, testResult = null)
+    }
+
+    fun updateDialogModel(value: String) {
+        _uiState.value = _uiState.value.copy(dialogModel = value, testResult = null)
+    }
+
+    fun updateDialogSystemPrompt(value: String) {
+        _uiState.value = _uiState.value.copy(dialogSystemPrompt = value)
+    }
+
+    fun updateDialogTemperature(value: Float) {
+        _uiState.value = _uiState.value.copy(dialogTemperature = value)
+    }
+
+    fun toggleDialogUseTemperature(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(dialogUseTemperature = enabled)
+    }
+
+    fun updateDialogMaxTokens(value: String) {
+        _uiState.value = _uiState.value.copy(dialogMaxTokens = value.filter { it.isDigit() })
+    }
+
+    fun saveProvider() {
+        val state = _uiState.value
+        val provider = Provider(
+            id = state.editingProviderId ?: UUID.randomUUID().toString(),
+            name = state.dialogName.trim().ifBlank {
+                runCatching { java.net.URI(state.dialogBaseUrl.trim()).host }
+                    .getOrNull()?.takeIf { it.isNotBlank() } ?: "Unnamed Provider"
+            },
+            baseUrl = state.dialogBaseUrl.trim(),
+            apiKey = state.dialogApiKey.trim(),
+            selectedModel = state.dialogModel.trim(),
+            systemPrompt = state.dialogSystemPrompt.trim(),
+            temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
+            maxTokens = state.dialogMaxTokens.toIntOrNull(),
+            availableModels = state.dialogAvailableModels
         )
+        repository.saveProvider(provider)
+
+        // Auto-activate if it's the first provider or if it was already the active one
+        val allProviders = repository.getProviders()
+        if (allProviders.size == 1 || state.activeProviderId == provider.id) {
+            repository.setActiveProvider(provider.id)
+        }
+
+        _uiState.value = _uiState.value.copy(showProviderDialog = false)
+        loadProviders()
+    }
+
+    fun deleteProvider(providerId: String) {
+        repository.deleteProvider(providerId)
+        // Auto-activate the first remaining provider if the active one was deleted
+        val remaining = repository.getProviders()
+        if (repository.getActiveProvider() == null && remaining.isNotEmpty()) {
+            repository.setActiveProvider(remaining.first().id)
+        }
+        loadProviders()
+    }
+
+    fun setActiveProvider(providerId: String) {
+        repository.setActiveProvider(providerId)
+        _uiState.value = _uiState.value.copy(activeProviderId = providerId)
     }
 
     fun testConnection() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isTesting = true, testResult = null)
-
-            val config = createConfig()
+            val config = createDialogConfig()
             val result = repository.testConnection(config)
-
             _uiState.value = _uiState.value.copy(
                 isTesting = false,
                 testResult = when (result) {
@@ -129,52 +192,39 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun saveConfig() {
-        val config = createConfig()
-        repository.saveApiConfig(config)
-        _uiState.value = _uiState.value.copy(isSaved = true)
+    fun fetchModels() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isFetchingModels = true)
+            val config = createDialogConfig()
+            val result = repository.fetchModels(config)
+            _uiState.value = when (result) {
+                is ApiResult.Success -> _uiState.value.copy(
+                    dialogAvailableModels = result.data,
+                    isFetchingModels = false,
+                    testResult = TestResult.Success("Found ${result.data.size} models")
+                )
+                is ApiResult.Error -> _uiState.value.copy(
+                    isFetchingModels = false,
+                    testResult = TestResult.Error("Failed to fetch models: ${result.message}")
+                )
+            }
+        }
     }
 
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
     }
 
-    private fun createConfig(): ApiConfig {
+    private fun createDialogConfig(): ApiConfig {
         val state = _uiState.value
         return ApiConfig(
-            baseUrl = state.baseUrl.trim(),
-            apiKey = state.apiKey.trim(),
-            model = state.model.trim(),
-            systemPrompt = state.systemPrompt.trim(),
-            temperature = if (state.useTemperature) state.temperature else null,
-            maxTokens = state.maxTokens.toIntOrNull()
+            baseUrl = state.dialogBaseUrl.trim(),
+            apiKey = state.dialogApiKey.trim(),
+            model = state.dialogModel.trim(),
+            systemPrompt = state.dialogSystemPrompt.trim(),
+            temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
+            maxTokens = state.dialogMaxTokens.toIntOrNull(),
+            providerName = state.dialogName.trim()
         )
     }
-
-    fun fetchModels() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isFetchingModels = true)
-
-            val config = createConfig()
-            val result = repository.fetchModels(config)
-
-            _uiState.value = when (result) {
-                is ApiResult.Success -> {
-                    _uiState.value.copy(
-                        availableModels = result.data,
-                        isFetchingModels = false,
-                        testResult = TestResult.Success("Found ${result.data.size} models")
-                    )
-                }
-                is ApiResult.Error -> {
-                    _uiState.value.copy(
-                        isFetchingModels = false,
-                        testResult = TestResult.Error("Failed to fetch models: ${result.message}")
-                    )
-                }
-            }
-        }
-    }
-
-    fun isConfigValid(): Boolean = _uiState.value.isConfigValid
 }
