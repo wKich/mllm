@@ -102,6 +102,7 @@ fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderCard(
     provider: Provider,
@@ -335,7 +336,7 @@ private fun ProviderDialog(
                     }
                 }
 
-                HorizontalDivider()
+                Divider()
 
                 Text(
                     text = "Optional Settings",
