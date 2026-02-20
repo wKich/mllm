@@ -410,10 +410,8 @@ private fun ModelSelectorDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (availableModels.isEmpty()) {
-                    TextButton(onClick = onFetchModels) {
-                        Text("Fetch available models")
-                    }
+                TextButton(onClick = onFetchModels) {
+                    Text(if (availableModels.isEmpty()) "Fetch available models" else "Refresh models")
                 }
 
                 modelsToShow.forEach { model ->
