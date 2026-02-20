@@ -86,6 +86,17 @@ class SecurePreferences @Inject constructor(
         if (activeProvider != null) {
             return activeProvider.toApiConfig()
         }
+
+        // If there is no active provider but providers are stored, fall back to the first one
+        val providers = getProviders()
+        if (providers.isNotEmpty()) {
+            val firstProvider = providers.first()
+            // Repair the active provider ID so subsequent calls see a valid active provider
+            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
+            return firstProvider.toApiConfig()
+        }
+
+        // Final fallback to legacy flat keys when no providers exist
         return ApiConfig(
             baseUrl = securePrefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
             apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
