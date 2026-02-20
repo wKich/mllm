@@ -152,9 +152,11 @@ class SettingsViewModel @Inject constructor(
         )
         repository.saveProvider(provider)
 
-        // Auto-activate if it's the first provider or if it was already the active one
+        // Auto-activate if it's the first provider, if it was already the active one,
+        // or if there is currently no active provider set.
         val allProviders = repository.getProviders()
-        if (allProviders.size == 1 || state.activeProviderId == provider.id) {
+        val hasNoActiveProvider = repository.getActiveProvider() == null
+        if (allProviders.size == 1 || state.activeProviderId == provider.id || hasNoActiveProvider) {
             repository.setActiveProvider(provider.id)
         }
 
