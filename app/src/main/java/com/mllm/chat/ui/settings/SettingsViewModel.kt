@@ -30,7 +30,11 @@ data class SettingsUiState(
     val dialogAvailableModels: List<String> = emptyList(),
     val isTesting: Boolean = false,
     val testResult: TestResult? = null,
-    val isFetchingModels: Boolean = false
+    val isFetchingModels: Boolean = false,
+    // Web search settings
+    val webSearchEnabled: Boolean = false,
+    val webSearchApiKey: String = "",
+    val webSearchProvider: String = "brave"
 ) {
     val isDialogConfigValid: Boolean
         get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank() && dialogModel.isNotBlank()
@@ -58,7 +62,10 @@ class SettingsViewModel @Inject constructor(
         val activeId = repository.getActiveProvider()?.id
         _uiState.value = _uiState.value.copy(
             providers = providers,
-            activeProviderId = activeId
+            activeProviderId = activeId,
+            webSearchEnabled = repository.getWebSearchEnabled(),
+            webSearchApiKey = repository.getWebSearchApiKey(),
+            webSearchProvider = repository.getWebSearchProvider()
         )
     }
 
@@ -215,6 +222,27 @@ class SettingsViewModel @Inject constructor(
 
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
+    }
+
+    // Web search settings
+    fun updateWebSearchEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(webSearchEnabled = enabled)
+        saveWebSearchConfig()
+    }
+
+    fun updateWebSearchApiKey(apiKey: String) {
+        _uiState.value = _uiState.value.copy(webSearchApiKey = apiKey)
+        saveWebSearchConfig()
+    }
+
+    fun updateWebSearchProvider(provider: String) {
+        _uiState.value = _uiState.value.copy(webSearchProvider = provider)
+        saveWebSearchConfig()
+    }
+
+    private fun saveWebSearchConfig() {
+        val state = _uiState.value
+        repository.saveWebSearchConfig(state.webSearchEnabled, state.webSearchApiKey, state.webSearchProvider)
     }
 
     private fun createDialogConfig(): ApiConfig {

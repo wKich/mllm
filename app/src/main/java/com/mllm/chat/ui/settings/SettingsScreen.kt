@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -54,7 +55,8 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
@@ -77,8 +79,8 @@ fun SettingsScreen(
                     )
                 }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(uiState.providers, key = { it.id }) { provider ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    uiState.providers.forEach { provider ->
                         ProviderCard(
                             provider = provider,
                             isActive = provider.id == uiState.activeProviderId,
@@ -89,6 +91,11 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            Divider()
+
+            // Web Search Settings
+            WebSearchSettings(uiState = uiState, viewModel = viewModel)
         }
     }
 
@@ -102,6 +109,7 @@ fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderCard(
     provider: Provider,
@@ -335,7 +343,7 @@ private fun ProviderDialog(
                     }
                 }
 
-                HorizontalDivider()
+                Divider()
 
                 Text(
                     text = "Optional Settings",
@@ -414,4 +422,124 @@ private fun ProviderDialog(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WebSearchSettings(
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel
+) {
+    var showApiKey by remember { mutableStateOf(false) }
+    var expandedProviderDropdown by remember { mutableStateOf(false) }
+
+    val providers = listOf("brave" to "Brave Search", "tavily" to "Tavily")
+    val selectedProviderLabel = providers.firstOrNull { it.first == uiState.webSearchProvider }?.second ?: "Brave Search"
+
+    Text(
+        text = "Web Search",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Enable Web Search", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "Allow the AI to search the web during chat",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = uiState.webSearchEnabled,
+                    onCheckedChange = viewModel::updateWebSearchEnabled
+                )
+            }
+
+            if (uiState.webSearchEnabled) {
+                // Search provider dropdown
+                ExposedDropdownMenuBox(
+                    expanded = expandedProviderDropdown,
+                    onExpandedChange = { expandedProviderDropdown = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedProviderLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Search Provider") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProviderDropdown)
+                        }
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedProviderDropdown,
+                        onDismissRequest = { expandedProviderDropdown = false }
+                    ) {
+                        providers.forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    viewModel.updateWebSearchProvider(value)
+                                    expandedProviderDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // API Key
+                OutlinedTextField(
+                    value = uiState.webSearchApiKey,
+                    onValueChange = viewModel::updateWebSearchApiKey,
+                    label = { Text("Search API Key") },
+                    placeholder = {
+                        Text(
+                            if (uiState.webSearchProvider == "tavily") "tvly-..." else "BSA..."
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = if (showApiKey) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showApiKey = !showApiKey }) {
+                            Icon(
+                                imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showApiKey) "Hide" else "Show"
+                            )
+                        }
+                    },
+                    supportingText = {
+                        val providerUrl = if (uiState.webSearchProvider == "tavily") {
+                            "Get a free key at app.tavily.com"
+                        } else {
+                            "Get a key at brave.com/search/api"
+                        }
+                        Text(providerUrl)
+                    }
+                )
+            }
+        }
+    }
 }
