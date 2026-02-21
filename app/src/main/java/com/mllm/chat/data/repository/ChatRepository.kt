@@ -9,10 +9,12 @@ import com.mllm.chat.data.remote.OpenAIApiClient
 import com.mllm.chat.data.remote.StreamEvent
 import com.mllm.chat.data.remote.WebSearchClient
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,14 +50,14 @@ class ChatRepository @Inject constructor(
     fun getProviders(): List<com.mllm.chat.data.model.Provider> =
         securePreferences.getProviders()
 
-    fun saveProvider(provider: com.mllm.chat.data.model.Provider) =
-        securePreferences.addProvider(provider)
+    suspend fun saveProvider(provider: com.mllm.chat.data.model.Provider) =
+        withContext(Dispatchers.IO) { securePreferences.addProvider(provider) }
 
-    fun deleteProvider(providerId: String) =
-        securePreferences.deleteProvider(providerId)
+    suspend fun deleteProvider(providerId: String) =
+        withContext(Dispatchers.IO) { securePreferences.deleteProvider(providerId) }
 
-    fun setActiveProvider(providerId: String) =
-        securePreferences.setActiveProviderId(providerId)
+    suspend fun setActiveProvider(providerId: String) =
+        withContext(Dispatchers.IO) { securePreferences.setActiveProviderId(providerId) }
 
     fun getActiveProvider(): com.mllm.chat.data.model.Provider? =
         securePreferences.getActiveProvider()

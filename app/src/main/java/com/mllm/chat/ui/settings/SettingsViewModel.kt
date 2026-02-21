@@ -197,18 +197,30 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteProvider(providerId: String) {
-        repository.deleteProvider(providerId)
-        // Auto-activate the first remaining provider if the active one was deleted
-        val remaining = repository.getProviders()
-        if (repository.getActiveProvider() == null && remaining.isNotEmpty()) {
-            repository.setActiveProvider(remaining.first().id)
+        viewModelScope.launch {
+            try {
+                repository.deleteProvider(providerId)
+                // Auto-activate the first remaining provider if the active one was deleted
+                val remaining = repository.getProviders()
+                if (repository.getActiveProvider() == null && remaining.isNotEmpty()) {
+                    repository.setActiveProvider(remaining.first().id)
+                }
+            } catch (_: Exception) {
+                // Best-effort; reload current state regardless
+            }
+            loadProviders()
         }
-        loadProviders()
     }
 
     fun setActiveProvider(providerId: String) {
-        repository.setActiveProvider(providerId)
-        _uiState.value = _uiState.value.copy(activeProviderId = providerId)
+        viewModelScope.launch {
+            try {
+                repository.setActiveProvider(providerId)
+                _uiState.value = _uiState.value.copy(activeProviderId = providerId)
+            } catch (_: Exception) {
+                // Best-effort; UI state unchanged if persist fails
+            }
+        }
     }
 
     fun testConnection() {
