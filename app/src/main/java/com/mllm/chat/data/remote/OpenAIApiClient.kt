@@ -30,6 +30,8 @@ sealed class StreamEvent {
     data class Content(val text: String) : StreamEvent()
     data class Reasoning(val text: String) : StreamEvent()
     data class Error(val message: String) : StreamEvent()
+    data class ToolCallRequested(val id: String, val name: String, val arguments: String) : StreamEvent()
+    object WebSearchStarted : StreamEvent()
     object Done : StreamEvent()
 }
 
@@ -120,23 +122,33 @@ class OpenAIApiClient @Inject constructor() {
     fun streamChatCompletion(
         config: ApiConfig,
         messages: List<Message>
+    ): Flow<StreamEvent> = streamChatCompletionWithMessages(
+        config,
+        messages.map { ChatMessage(role = it.role, content = it.content) }
+    )
+
+    fun streamChatCompletionWithMessages(
+        config: ApiConfig,
+        chatMessages: List<ChatMessage>,
+        tools: List<Tool>? = null
     ): Flow<StreamEvent> = callbackFlow {
-        val chatMessages = mutableListOf<ChatMessage>()
+        val allMessages = mutableListOf<ChatMessage>()
 
         // Add system prompt if configured
         if (config.systemPrompt.isNotBlank()) {
-            chatMessages.add(ChatMessage("system", config.systemPrompt))
+            allMessages.add(ChatMessage("system", config.systemPrompt))
         }
 
-        // Add conversation messages
-        chatMessages.addAll(messages.map { ChatMessage(it.role, it.content) })
+        allMessages.addAll(chatMessages)
 
         val request = ChatCompletionRequest(
             model = config.model,
-            messages = chatMessages,
+            messages = allMessages,
             stream = true,
             temperature = config.temperature,
-            maxTokens = config.maxTokens
+            maxTokens = config.maxTokens,
+            tools = tools?.takeIf { it.isNotEmpty() },
+            toolChoice = if (!tools.isNullOrEmpty()) "auto" else null
         )
 
         val requestBody = gson.toJson(request)
@@ -151,6 +163,11 @@ class OpenAIApiClient @Inject constructor() {
             .build()
 
         val call = client.newCall(httpRequest)
+
+        // Accumulate tool call arguments across streaming chunks
+        val toolCallIds = mutableMapOf<Int, String>()
+        val toolCallNames = mutableMapOf<Int, String>()
+        val toolCallArgs = mutableMapOf<Int, StringBuilder>()
 
         try {
             val response = call.execute()
@@ -190,7 +207,8 @@ class OpenAIApiClient @Inject constructor() {
 
                         try {
                             val chunk = gson.fromJson(data, ChatCompletionChunk::class.java)
-                            val delta = chunk.choices?.firstOrNull()?.delta
+                            val choice = chunk.choices?.firstOrNull()
+                            val delta = choice?.delta
 
                             // Handle regular content
                             val content = delta?.content
@@ -204,9 +222,43 @@ class OpenAIApiClient @Inject constructor() {
                                 trySend(StreamEvent.Reasoning(reasoningContent))
                             }
 
+                            // Accumulate tool call deltas
+                            delta?.toolCalls?.forEach { toolCallDelta ->
+                                val index = toolCallDelta.index ?: 0
+                                toolCallDelta.id?.takeIf { it.isNotEmpty() }?.let { id ->
+                                    toolCallIds[index] = id
+                                }
+                                toolCallDelta.function?.name?.takeIf { it.isNotEmpty() }?.let { name ->
+                                    toolCallNames[index] = name
+                                }
+                                toolCallDelta.function?.arguments?.takeIf { it.isNotEmpty() }?.let { args ->
+                                    toolCallArgs.getOrPut(index) { StringBuilder() }.append(args)
+                                }
+                            }
+
                             // Check for finish reason
-                            val finishReason = chunk.choices?.firstOrNull()?.finishReason
-                            if (finishReason != null && finishReason != "null") {
+                            val finishReason = choice?.finishReason
+                            if (finishReason == "tool_calls") {
+                                if (toolCallIds.isEmpty()) {
+                                    trySend(StreamEvent.Error("Received tool_calls finish but no tool calls were accumulated"))
+                                } else {
+                                    var emitError = false
+                                    for (index in toolCallIds.keys.sorted()) {
+                                        val id = toolCallIds[index]
+                                        val name = toolCallNames[index]
+                                        if (id == null || name == null) {
+                                            emitError = true
+                                            break
+                                        }
+                                        val args = toolCallArgs[index]?.toString() ?: "{}"
+                                        trySend(StreamEvent.ToolCallRequested(id, name, args))
+                                    }
+                                    if (emitError) {
+                                        trySend(StreamEvent.Error("One or more tool calls in the stream were incomplete"))
+                                    }
+                                }
+                                break
+                            } else if (finishReason != null && finishReason != "null") {
                                 trySend(StreamEvent.Done)
                                 break
                             }
