@@ -49,9 +49,11 @@ class ChatViewModel @Inject constructor(
 
     private fun checkConfiguration() {
         val config = repository.getApiConfig()
+        val activeProvider = repository.getActiveProvider()
         _uiState.value = _uiState.value.copy(
             isConfigured = config.isConfigured,
-            currentModel = config.model
+            currentModel = config.model,
+            availableModels = activeProvider?.availableModels ?: emptyList()
         )
     }
 
@@ -72,6 +74,10 @@ class ChatViewModel @Inject constructor(
             val result = repository.fetchModels(config)
             if (result is com.mllm.chat.data.remote.ApiResult.Success) {
                 _uiState.value = _uiState.value.copy(availableModels = result.data)
+                // Persist fetched models so they survive configuration refreshes
+                repository.getActiveProvider()?.let { provider ->
+                    repository.saveProvider(provider.copy(availableModels = result.data))
+                }
             }
         }
     }
