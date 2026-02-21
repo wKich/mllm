@@ -220,7 +220,16 @@ class ChatRepository @Inject constructor(
                             val query = parseSearchQuery(toolCall.function.arguments)
                                 ?: toolCall.function.arguments
                             send(StreamEvent.WebSearchStarted)
-                            val result = webSearchClient.search(query, webSearchApiKey, webSearchProvider)
+                            val result = try {
+                                webSearchClient.search(query, webSearchApiKey, webSearchProvider)
+                            } catch (e: Exception) {
+                                val errorMessage = "Web search failed: ${e.message ?: "Unknown error"}"
+                                send(StreamEvent.Error(errorMessage))
+                                errorMessage
+                            }
+                            if (result.startsWith("Error", ignoreCase = true)) {
+                                send(StreamEvent.Error(result))
+                            }
                             conversationMessages.add(
                                 ChatMessage(
                                     role = "tool",
