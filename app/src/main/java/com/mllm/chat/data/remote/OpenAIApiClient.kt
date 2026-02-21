@@ -85,33 +85,36 @@ class OpenAIApiClient @Inject constructor() {
                 .build()
 
             val response = client.newCall(httpRequest).execute()
-            val responseBody = response.body?.string()
-
-            when {
-                response.isSuccessful && responseBody != null -> {
-                    val completionResponse = gson.fromJson(responseBody, ChatCompletionResponse::class.java)
-                    val content = completionResponse.choices?.firstOrNull()?.message?.content
-                    if (content != null) {
-                        ApiResult.Success(content)
-                    } else {
-                        ApiResult.Error("Empty response from API")
+            response.use {
+                val responseBody = it.body?.string()
+                when {
+                    it.isSuccessful -> {
+                        val content = try {
+                            responseBody?.let { body ->
+                                val completionResponse = gson.fromJson(body, ChatCompletionResponse::class.java)
+                                completionResponse.choices?.firstOrNull()?.message?.content
+                            }
+                        } catch (e: Exception) {
+                            null
+                        }
+                        ApiResult.Success(content ?: "Connection successful!")
                     }
-                }
-                response.code == 401 -> {
-                    ApiResult.Error("Authentication failed. Please check your API key.", 401)
-                }
-                response.code == 404 -> {
-                    ApiResult.Error("Model not found or invalid endpoint.", 404)
-                }
-                response.code == 429 -> {
-                    ApiResult.Error("Rate limit exceeded. Please try again later.", 429)
-                }
-                else -> {
-                    val errorResponse = try {
-                        gson.fromJson(responseBody, ErrorResponse::class.java)
-                    } catch (e: Exception) { null }
-                    val errorMessage = errorResponse?.error?.message ?: "API error: ${response.code}"
-                    ApiResult.Error(errorMessage, response.code)
+                    it.code == 401 -> {
+                        ApiResult.Error("Authentication failed. Please check your API key.", 401)
+                    }
+                    it.code == 404 -> {
+                        ApiResult.Error("Model not found or invalid endpoint.", 404)
+                    }
+                    it.code == 429 -> {
+                        ApiResult.Error("Rate limit exceeded. Please try again later.", 429)
+                    }
+                    else -> {
+                        val errorResponse = try {
+                            gson.fromJson(responseBody, ErrorResponse::class.java)
+                        } catch (e: Exception) { null }
+                        val errorMessage = errorResponse?.error?.message ?: "API error: ${it.code}"
+                        ApiResult.Error(errorMessage, it.code)
+                    }
                 }
             }
         } catch (e: Exception) {

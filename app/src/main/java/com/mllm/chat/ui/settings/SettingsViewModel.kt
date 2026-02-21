@@ -7,12 +7,15 @@ import com.mllm.chat.data.model.Provider
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 
@@ -22,9 +25,9 @@ data class SettingsUiState(
     val showProviderDialog: Boolean = false,
     val editingProviderId: String? = null,
     val dialogName: String = "",
-    val dialogBaseUrl: String = "https://api.openai.com/v1",
+    val dialogBaseUrl: String = "",
     val dialogApiKey: String = "",
-    val dialogModel: String = "gpt-4",
+    val dialogModel: String = "",
     val dialogSystemPrompt: String = "",
     val dialogTemperature: Float = 0.7f,
     val dialogUseTemperature: Boolean = false,
@@ -40,6 +43,9 @@ data class SettingsUiState(
 ) {
     val isDialogConfigValid: Boolean
         get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank() && dialogModel.isNotBlank()
+
+    val isFetchModelsConfigValid: Boolean
+        get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank()
 }
 
 sealed class TestResult {
@@ -78,9 +84,9 @@ class SettingsViewModel @Inject constructor(
             showProviderDialog = true,
             editingProviderId = null,
             dialogName = "",
-            dialogBaseUrl = "https://api.openai.com/v1",
+            dialogBaseUrl = "",
             dialogApiKey = "",
-            dialogModel = "gpt-4",
+            dialogModel = "",
             dialogSystemPrompt = "",
             dialogTemperature = 0.7f,
             dialogUseTemperature = false,
@@ -146,33 +152,44 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun saveProvider() {
-        val state = _uiState.value
-        val provider = Provider(
-            id = state.editingProviderId ?: UUID.randomUUID().toString(),
-            name = state.dialogName.trim().ifBlank {
-                runCatching { java.net.URI(state.dialogBaseUrl.trim()).host }
-                    .getOrNull()?.takeIf { it.isNotBlank() } ?: "Unnamed Provider"
-            },
-            baseUrl = state.dialogBaseUrl.trim(),
-            apiKey = state.dialogApiKey.trim(),
-            selectedModel = state.dialogModel.trim(),
-            systemPrompt = state.dialogSystemPrompt.trim(),
-            temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
-            maxTokens = state.dialogMaxTokens.toIntOrNull(),
-            availableModels = state.dialogAvailableModels
-        )
-        repository.saveProvider(provider)
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            val provider = Provider(
+                id = state.editingProviderId ?: UUID.randomUUID().toString(),
+                name = state.dialogName.trim().ifBlank {
+                    runCatching { java.net.URI(state.dialogBaseUrl.trim()).host }
+                        .getOrNull()?.takeIf { it.isNotBlank() } ?: "Unnamed Provider"
+                },
+                baseUrl = state.dialogBaseUrl.trim(),
+                apiKey = state.dialogApiKey.trim(),
+                selectedModel = state.dialogModel.trim(),
+                systemPrompt = state.dialogSystemPrompt.trim(),
+                temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
+                maxTokens = state.dialogMaxTokens.toIntOrNull(),
+                availableModels = state.dialogAvailableModels
+            )
+            repository.saveProvider(provider)
 
-        // Auto-activate if it's the first provider, if it was already the active one,
-        // or if there is currently no active provider set.
-        val allProviders = repository.getProviders()
-        val hasNoActiveProvider = repository.getActiveProvider() == null
-        if (allProviders.size == 1 || state.activeProviderId == provider.id || hasNoActiveProvider) {
-            repository.setActiveProvider(provider.id)
+            // Auto-activate if it's the first provider, if it was already the active one,
+            // or if there is currently no active provider set.
+            val allProviders = repository.getProviders()
+            val hasNoActiveProvider = repository.getActiveProvider() == null
+            if (allProviders.size == 1 || state.activeProviderId == provider.id || hasNoActiveProvider) {
+                repository.setActiveProvider(provider.id)
+            }
+
+            val providers = repository.getProviders()
+            val activeId = repository.getActiveProvider()?.id
+            withContext(Dispatchers.Main) {
+                _uiState.update { s ->
+                    s.copy(
+                        showProviderDialog = false,
+                        providers = providers,
+                        activeProviderId = activeId
+                    )
+                }
+            }
         }
-
-        _uiState.value = _uiState.value.copy(showProviderDialog = false)
-        loadProviders()
     }
 
     fun deleteProvider(providerId: String) {
