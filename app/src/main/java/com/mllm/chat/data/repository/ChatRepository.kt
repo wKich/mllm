@@ -140,11 +140,16 @@ class ChatRepository @Inject constructor(
         )
     )
 
+    // Data class representing expected web_search tool arguments
+    private data class WebSearchArguments(
+        val query: String?
+    )
+
     // Parse the web_search arguments JSON to extract the query
     private fun parseSearchQuery(arguments: String): String? {
         return try {
-            val map = gson.fromJson(arguments, Map::class.java)
-            map["query"] as? String
+            val parsed = gson.fromJson(arguments, WebSearchArguments::class.java)
+            parsed?.query?.takeIf { it.isNotBlank() }
         } catch (e: Exception) {
             null
         }
