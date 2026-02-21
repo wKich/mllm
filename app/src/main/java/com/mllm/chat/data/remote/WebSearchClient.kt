@@ -178,34 +178,39 @@ class WebSearchClient @Inject constructor() {
             .post(requestBody)
             .build()
 
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: return "No results found"
+        return client.newCall(request).execute().use { response ->
+            val body = response.body?.string()
 
-        if (!response.isSuccessful) {
-            return "Search API error: ${response.code}"
-        }
-
-        val parsed = try {
-            gson.fromJson(body, SyntheticSearchResponse::class.java)
-        } catch (e: Exception) {
-            return "Failed to parse search results"
-        }
-
-        val results = parsed.results ?: return "No results found"
-        if (results.isEmpty()) return "No results found"
-
-        return buildString {
-            results.forEachIndexed { i, result ->
-                appendLine("${i + 1}. ${result.title ?: "No title"}")
-                appendLine("   URL: ${result.url ?: "No URL"}")
-                if (!result.text.isNullOrBlank()) {
-                    appendLine("   ${result.text}")
-                }
-                if (!result.published.isNullOrBlank()) {
-                    appendLine("   Published: ${result.published}")
-                }
-                appendLine()
+            if (body.isNullOrEmpty()) {
+                return "Search API error: empty response body (HTTP ${response.code})"
             }
-        }.trim()
+
+            if (!response.isSuccessful) {
+                return "Search API error: HTTP ${response.code}: $body"
+            }
+
+            val parsed = try {
+                gson.fromJson(body, SyntheticSearchResponse::class.java)
+            } catch (e: Exception) {
+                return "Failed to parse search results: ${e.message ?: "unknown error"}"
+            }
+
+            val results = parsed.results ?: return "No results found"
+            if (results.isEmpty()) return "No results found"
+
+            buildString {
+                results.forEachIndexed { i, result ->
+                    appendLine("${i + 1}. ${result.title ?: "No title"}")
+                    appendLine("   URL: ${result.url ?: "No URL"}")
+                    if (!result.text.isNullOrBlank()) {
+                        appendLine("   ${result.text}")
+                    }
+                    if (!result.published.isNullOrBlank()) {
+                        appendLine("   Published: ${result.published}")
+                    }
+                    appendLine()
+                }
+            }.trim()
+        }
     }
 }
