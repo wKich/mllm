@@ -7,15 +7,12 @@ import com.mllm.chat.data.model.Provider
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 
@@ -152,7 +149,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun saveProvider() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val state = _uiState.value
             val provider = Provider(
                 id = state.editingProviderId ?: UUID.randomUUID().toString(),
@@ -180,15 +177,11 @@ class SettingsViewModel @Inject constructor(
 
             val providers = repository.getProviders()
             val activeId = repository.getActiveProvider()?.id
-            withContext(Dispatchers.Main) {
-                _uiState.update { s ->
-                    s.copy(
-                        showProviderDialog = false,
-                        providers = providers,
-                        activeProviderId = activeId
-                    )
-                }
-            }
+            _uiState.value = _uiState.value.copy(
+                showProviderDialog = false,
+                providers = providers,
+                activeProviderId = activeId
+            )
         }
     }
 
