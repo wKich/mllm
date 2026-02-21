@@ -13,7 +13,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 
@@ -176,8 +178,17 @@ class SettingsViewModel @Inject constructor(
                 repository.setActiveProvider(provider.id)
             }
 
-            _uiState.value = _uiState.value.copy(showProviderDialog = false)
-            loadProviders()
+            val providers = repository.getProviders()
+            val activeId = repository.getActiveProvider()?.id
+            withContext(Dispatchers.Main) {
+                _uiState.update { s ->
+                    s.copy(
+                        showProviderDialog = false,
+                        providers = providers,
+                        activeProviderId = activeId
+                    )
+                }
+            }
         }
     }
 
