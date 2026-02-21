@@ -126,7 +126,10 @@ class SecurePreferences @Inject constructor(
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        securePrefs.edit().putString(KEY_PROVIDERS, json).apply()
+        val committed = securePrefs.edit().putString(KEY_PROVIDERS, json).commit()
+        if (!committed) {
+            throw RuntimeException("Failed to persist providers to storage")
+        }
     }
 
     fun getProviders(): List<Provider> {
@@ -162,10 +165,13 @@ class SecurePreferences @Inject constructor(
     }
 
     fun setActiveProviderId(providerId: String?) {
-        if (providerId != null) {
-            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).apply()
+        val committed = if (providerId != null) {
+            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).commit()
         } else {
-            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).apply()
+            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).commit()
+        }
+        if (!committed) {
+            throw RuntimeException("Failed to persist active provider ID to storage")
         }
     }
 
