@@ -36,7 +36,8 @@ data class SettingsUiState(
     // Web search settings
     val webSearchEnabled: Boolean = false,
     val webSearchApiKey: String = "",
-    val webSearchProvider: String = "brave"
+    val webSearchProvider: String = "brave",
+    val saveProviderError: String? = null
 ) {
     val isDialogConfigValid: Boolean
         get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank() && dialogModel.isNotBlank()
@@ -89,7 +90,8 @@ class SettingsViewModel @Inject constructor(
             dialogUseTemperature = false,
             dialogMaxTokens = "",
             dialogAvailableModels = emptyList(),
-            testResult = null
+            testResult = null,
+            saveProviderError = null
         )
     }
 
@@ -108,7 +110,8 @@ class SettingsViewModel @Inject constructor(
             dialogUseTemperature = provider.temperature != null,
             dialogMaxTokens = provider.maxTokens?.toString() ?: "",
             dialogAvailableModels = provider.availableModels,
-            testResult = null
+            testResult = null,
+            saveProviderError = null
         )
     }
 
@@ -150,38 +153,46 @@ class SettingsViewModel @Inject constructor(
 
     fun saveProvider() {
         viewModelScope.launch {
-            val state = _uiState.value
-            val provider = Provider(
-                id = state.editingProviderId ?: UUID.randomUUID().toString(),
-                name = state.dialogName.trim().ifBlank {
-                    runCatching { java.net.URI(state.dialogBaseUrl.trim()).host }
-                        .getOrNull()?.takeIf { it.isNotBlank() } ?: "Unnamed Provider"
-                },
-                baseUrl = state.dialogBaseUrl.trim(),
-                apiKey = state.dialogApiKey.trim(),
-                selectedModel = state.dialogModel.trim(),
-                systemPrompt = state.dialogSystemPrompt.trim(),
-                temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
-                maxTokens = state.dialogMaxTokens.toIntOrNull(),
-                availableModels = state.dialogAvailableModels
-            )
-            repository.saveProvider(provider)
+            try {
+                val state = _uiState.value
+                val provider = Provider(
+                    id = state.editingProviderId ?: UUID.randomUUID().toString(),
+                    name = state.dialogName.trim().ifBlank {
+                        runCatching { java.net.URI(state.dialogBaseUrl.trim()).host }
+                            .getOrNull()?.takeIf { it.isNotBlank() } ?: "Unnamed Provider"
+                    },
+                    baseUrl = state.dialogBaseUrl.trim(),
+                    apiKey = state.dialogApiKey.trim(),
+                    selectedModel = state.dialogModel.trim(),
+                    systemPrompt = state.dialogSystemPrompt.trim(),
+                    temperature = if (state.dialogUseTemperature) state.dialogTemperature else null,
+                    maxTokens = state.dialogMaxTokens.toIntOrNull(),
+                    availableModels = state.dialogAvailableModels
+                )
+                repository.saveProvider(provider)
 
-            // Auto-activate if it's the first provider, if it was already the active one,
-            // or if there is currently no active provider set.
-            val allProviders = repository.getProviders()
-            val hasNoActiveProvider = repository.getActiveProvider() == null
-            if (allProviders.size == 1 || state.activeProviderId == provider.id || hasNoActiveProvider) {
-                repository.setActiveProvider(provider.id)
+                // Auto-activate if it's the first provider, if it was already the active one,
+                // or if there is currently no active provider set.
+                val allProviders = repository.getProviders()
+                val hasNoActiveProvider = repository.getActiveProvider() == null
+                if (allProviders.size == 1 || state.activeProviderId == provider.id || hasNoActiveProvider) {
+                    repository.setActiveProvider(provider.id)
+                }
+
+                val providers = repository.getProviders()
+                val activeId = repository.getActiveProvider()?.id
+                _uiState.value = _uiState.value.copy(
+                    showProviderDialog = false,
+                    providers = providers,
+                    activeProviderId = activeId,
+                    saveProviderError = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    saveProviderError = e.message?.takeIf { it.isNotBlank() }
+                        ?: "Failed to save provider. Please try again."
+                )
             }
-
-            val providers = repository.getProviders()
-            val activeId = repository.getActiveProvider()?.id
-            _uiState.value = _uiState.value.copy(
-                showProviderDialog = false,
-                providers = providers,
-                activeProviderId = activeId
-            )
         }
     }
 

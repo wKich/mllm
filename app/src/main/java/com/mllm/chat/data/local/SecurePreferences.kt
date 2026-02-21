@@ -16,17 +16,21 @@ import javax.inject.Singleton
 class SecurePreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
+    private val masterKey: MasterKey by lazy {
+        MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+    }
 
-    private val securePrefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "secure_prefs",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val securePrefs: SharedPreferences by lazy {
+        EncryptedSharedPreferences.create(
+            context,
+            "secure_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     private val gson = Gson()
 
@@ -85,30 +89,34 @@ class SecurePreferences @Inject constructor(
     }
 
     fun getApiConfig(): ApiConfig {
-        val activeProvider = getActiveProvider()
-        if (activeProvider != null) {
-            return activeProvider.toApiConfig()
-        }
+        return try {
+            val activeProvider = getActiveProvider()
+            if (activeProvider != null) {
+                return activeProvider.toApiConfig()
+            }
 
-        // If there is no active provider but providers are stored, fall back to the first one
-        val providers = getProviders()
-        if (providers.isNotEmpty()) {
-            val firstProvider = providers.first()
-            // Repair the active provider ID so subsequent calls see a valid active provider
-            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
-            return firstProvider.toApiConfig()
-        }
+            // If there is no active provider but providers are stored, fall back to the first one
+            val providers = getProviders()
+            if (providers.isNotEmpty()) {
+                val firstProvider = providers.first()
+                // Repair the active provider ID so subsequent calls see a valid active provider
+                securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
+                return firstProvider.toApiConfig()
+            }
 
-        // Final fallback to legacy flat keys when no providers exist
-        return ApiConfig(
-            baseUrl = securePrefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
-            apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
-            model = securePrefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
-            systemPrompt = securePrefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
-            temperature = if (securePrefs.contains(KEY_TEMPERATURE)) securePrefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
-            maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null,
-            providerName = securePrefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
-        )
+            // Final fallback to legacy flat keys when no providers exist
+            ApiConfig(
+                baseUrl = securePrefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
+                apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
+                model = securePrefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
+                systemPrompt = securePrefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
+                temperature = if (securePrefs.contains(KEY_TEMPERATURE)) securePrefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
+                maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null,
+                providerName = securePrefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
+            )
+        } catch (e: Exception) {
+            ApiConfig()
+        }
     }
 
     fun clearApiKey() {
@@ -122,10 +130,10 @@ class SecurePreferences @Inject constructor(
     }
 
     fun getProviders(): List<Provider> {
-        val json = securePrefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
-        val type = object : TypeToken<List<Provider>>() {}.type
         return try {
-            gson.fromJson(json, type)
+            val json = securePrefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
+            val type = object : TypeToken<List<Provider>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -162,7 +170,11 @@ class SecurePreferences @Inject constructor(
     }
 
     fun getActiveProviderId(): String? {
-        return securePrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+        return try {
+            securePrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun getActiveProvider(): Provider? {
@@ -181,11 +193,23 @@ class SecurePreferences @Inject constructor(
     }
 
     fun getWebSearchEnabled(): Boolean =
-        securePrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
+        try {
+            securePrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
+        } catch (e: Exception) {
+            false
+        }
 
     fun getWebSearchApiKey(): String =
-        securePrefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
+        try {
+            securePrefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
 
     fun getWebSearchProvider(): String =
-        securePrefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
+        try {
+            securePrefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
+        } catch (e: Exception) {
+            "brave"
+        }
 }
