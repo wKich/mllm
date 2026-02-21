@@ -74,6 +74,10 @@ class ChatViewModel @Inject constructor(
             val result = repository.fetchModels(config)
             if (result is com.mllm.chat.data.remote.ApiResult.Success) {
                 _uiState.value = _uiState.value.copy(availableModels = result.data)
+                // Persist fetched models so they survive configuration refreshes
+                repository.getActiveProvider()?.let { provider ->
+                    repository.saveProvider(provider.copy(availableModels = result.data))
+                }
             }
         }
     }
