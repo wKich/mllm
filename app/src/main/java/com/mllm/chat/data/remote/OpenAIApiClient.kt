@@ -122,7 +122,10 @@ class OpenAIApiClient @Inject constructor() {
     fun streamChatCompletion(
         config: ApiConfig,
         messages: List<Message>
-    ): Flow<StreamEvent> = streamChatCompletionWithMessages(config, messages.map { ChatMessage(it.role, it.content) })
+    ): Flow<StreamEvent> = streamChatCompletionWithMessages(
+        config,
+        messages.map { ChatMessage(role = it.role, content = it.content) }
+    )
 
     fun streamChatCompletionWithMessages(
         config: ApiConfig,
@@ -236,31 +239,22 @@ class OpenAIApiClient @Inject constructor() {
                             // Check for finish reason
                             val finishReason = choice?.finishReason
                             if (finishReason == "tool_calls") {
-                                // Emit all accumulated tool calls, or report errors if data is missing
                                 if (toolCallIds.isEmpty()) {
-                                    trySend(
-                                        StreamEvent.Error(
-                                            "Received finish_reason=tool_calls but no tool calls were accumulated from the stream."
-                                        )
-                                    )
+                                    trySend(StreamEvent.Error("Received tool_calls finish but no tool calls were accumulated"))
                                 } else {
-                                    var hadIncompleteToolCall = false
-                                    toolCallIds.keys.sorted().forEach { index ->
+                                    var emitError = false
+                                    for (index in toolCallIds.keys.sorted()) {
                                         val id = toolCallIds[index]
                                         val name = toolCallNames[index]
                                         if (id == null || name == null) {
-                                            hadIncompleteToolCall = true
-                                            return@forEach
+                                            emitError = true
+                                            break
                                         }
                                         val args = toolCallArgs[index]?.toString() ?: "{}"
                                         trySend(StreamEvent.ToolCallRequested(id, name, args))
                                     }
-                                    if (hadIncompleteToolCall) {
-                                        trySend(
-                                            StreamEvent.Error(
-                                                "One or more tool calls in the stream were incomplete (missing id or name)."
-                                            )
-                                        )
+                                    if (emitError) {
+                                        trySend(StreamEvent.Error("One or more tool calls in the stream were incomplete"))
                                     }
                                 }
                                 break

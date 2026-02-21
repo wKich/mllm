@@ -9,6 +9,7 @@ import com.mllm.chat.data.remote.OpenAIApiClient
 import com.mllm.chat.data.remote.StreamEvent
 import com.mllm.chat.data.remote.WebSearchClient
 import com.google.gson.Gson
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
@@ -168,15 +169,18 @@ class ChatRepository @Inject constructor(
         }
 
         val tools = listOf(buildWebSearchTool())
-        val initialChatMessages = messages.map { ChatMessage(it.role, it.content) }
+        val initialChatMessages = messages.map { ChatMessage(role = it.role, content = it.content) }
 
         return channelFlow {
             // Maintain conversation context including tool call messages
             val conversationMessages = initialChatMessages.toMutableList()
 
             var continueLoop = true
-            while (continueLoop) {
+            var iterations = 0
+            while (continueLoop && iterations < MAX_TOOL_CALL_ITERATIONS) {
                 continueLoop = false
+                iterations++
+                var hasError = false
                 val pendingToolCalls = mutableListOf<AssistantToolCall>()
                 val assistantContentBuilder = StringBuilder()
 
@@ -188,7 +192,10 @@ class ChatRepository @Inject constructor(
                                 send(event)
                             }
                             is StreamEvent.Reasoning -> send(event)
-                            is StreamEvent.Error -> send(event)
+                            is StreamEvent.Error -> {
+                                hasError = true
+                                send(event)
+                            }
                             is StreamEvent.ToolCallRequested -> {
                                 pendingToolCalls.add(
                                     AssistantToolCall(
@@ -203,6 +210,8 @@ class ChatRepository @Inject constructor(
                             StreamEvent.Done, StreamEvent.WebSearchStarted -> { /* handled below */ }
                         }
                     }
+
+                if (hasError) break
 
                 if (pendingToolCalls.isNotEmpty()) {
                     // Add assistant message with tool calls to context
@@ -220,16 +229,16 @@ class ChatRepository @Inject constructor(
                             val query = parseSearchQuery(toolCall.function.arguments)
                                 ?: toolCall.function.arguments
                             send(StreamEvent.WebSearchStarted)
+                            ensureActive()
                             val result = try {
                                 webSearchClient.search(query, webSearchApiKey, webSearchProvider)
                             } catch (e: Exception) {
                                 val errorMessage = "Web search failed: ${e.message ?: "Unknown error"}"
                                 send(StreamEvent.Error(errorMessage))
-                                errorMessage
+                                hasError = true
+                                break
                             }
-                            if (result.startsWith("Error", ignoreCase = true)) {
-                                send(StreamEvent.Error(result))
-                            }
+                            ensureActive()
                             conversationMessages.add(
                                 ChatMessage(
                                     role = "tool",
@@ -240,13 +249,19 @@ class ChatRepository @Inject constructor(
                         }
                     }
 
-                    // Continue the loop to get the final response
-                    continueLoop = true
+                    if (!hasError) {
+                        // Continue the loop to get the final response
+                        continueLoop = true
+                    }
                 }
             }
 
             send(StreamEvent.Done)
         }
+    }
+
+    companion object {
+        private const val MAX_TOOL_CALL_ITERATIONS = 5
     }
 
     // Generate title from first message

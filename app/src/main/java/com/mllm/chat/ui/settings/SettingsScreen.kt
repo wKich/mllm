@@ -542,6 +542,23 @@ private fun WebSearchSettings(
                         Text(providerUrl)
                     }
                 )
+
+                // Warning when enabled but no API key
+                if (uiState.webSearchEnabled && uiState.webSearchApiKey.isBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = "Web search is enabled but no API key is set. Please enter an API key to use this feature.",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
             }
         }
     }

@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -65,20 +66,26 @@ class WebSearchClient @Inject constructor() {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    // Throws IOException on API errors; caller is responsible for catching.
+    // Query is truncated to 400 characters to match the tool description limit.
     suspend fun search(
         query: String,
         apiKey: String,
         provider: String
     ): String = withContext(Dispatchers.IO) {
-        try {
-            when (provider) {
-                "tavily" -> searchTavily(query, apiKey)
-                "synthetic" -> searchSynthetic(query, apiKey)
-                else -> searchBrave(query, apiKey)
-            }
-        } catch (e: Exception) {
-            "Web search failed: ${e.message}"
+        val trimmedQuery = query.take(400)
+        when (provider) {
+            "tavily" -> searchTavily(trimmedQuery, apiKey)
+            "synthetic" -> searchSynthetic(trimmedQuery, apiKey)
+            else -> searchBrave(trimmedQuery, apiKey)
         }
+    }
+
+    private fun httpErrorMessage(code: Int): String = when (code) {
+        401 -> "Invalid API key (HTTP 401)"
+        403 -> "Access forbidden (HTTP 403)"
+        429 -> "Rate limit exceeded, try again later (HTTP 429)"
+        else -> "HTTP error $code"
     }
 
     private fun searchBrave(query: String, apiKey: String): String {
@@ -90,35 +97,36 @@ class WebSearchClient @Inject constructor() {
             .get()
             .build()
 
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: return "No results found"
-
-        if (!response.isSuccessful) {
-            return "Search API error: ${response.code}"
-        }
-
-        val parsed = try {
-            gson.fromJson(body, BraveSearchResponse::class.java)
-        } catch (e: Exception) {
-            return "Failed to parse search results"
-        }
-
-        val results = parsed.web?.results ?: return "No results found"
-        if (results.isEmpty()) return "No results found"
-
-        return buildString {
-            results.forEachIndexed { i, result ->
-                appendLine("${i + 1}. ${result.title ?: "No title"}")
-                appendLine("   URL: ${result.url ?: "No URL"}")
-                if (!result.description.isNullOrBlank()) {
-                    appendLine("   ${result.description}")
-                }
-                if (!result.pageAge.isNullOrBlank()) {
-                    appendLine("   Published: ${result.pageAge}")
-                }
-                appendLine()
+        return client.newCall(request).execute().use { response ->
+            val body = response.body?.string()
+            if (!response.isSuccessful) {
+                throw IOException("Brave Search: ${httpErrorMessage(response.code)}")
             }
-        }.trim()
+            if (body.isNullOrEmpty()) return "No results found"
+
+            val parsed = try {
+                gson.fromJson(body, BraveSearchResponse::class.java)
+            } catch (e: Exception) {
+                throw IOException("Failed to parse Brave Search results: ${e.message}")
+            }
+
+            val results = parsed.web?.results ?: return "No results found"
+            if (results.isEmpty()) return "No results found"
+
+            buildString {
+                results.forEachIndexed { i, result ->
+                    appendLine("${i + 1}. ${result.title ?: "No title"}")
+                    appendLine("   URL: ${result.url ?: "No URL"}")
+                    if (!result.description.isNullOrBlank()) {
+                        appendLine("   ${result.description}")
+                    }
+                    if (!result.pageAge.isNullOrBlank()) {
+                        appendLine("   Published: ${result.pageAge}")
+                    }
+                    appendLine()
+                }
+            }.trim()
+        }
     }
 
     private fun searchTavily(query: String, apiKey: String): String {
@@ -136,35 +144,36 @@ class WebSearchClient @Inject constructor() {
             .post(requestBody)
             .build()
 
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: return "No results found"
-
-        if (!response.isSuccessful) {
-            return "Search API error: ${response.code}"
-        }
-
-        val parsed = try {
-            gson.fromJson(body, TavilySearchResponse::class.java)
-        } catch (e: Exception) {
-            return "Failed to parse search results"
-        }
-
-        val results = parsed.results ?: return "No results found"
-        if (results.isEmpty()) return "No results found"
-
-        return buildString {
-            results.forEachIndexed { i, result ->
-                appendLine("${i + 1}. ${result.title ?: "No title"}")
-                appendLine("   URL: ${result.url ?: "No URL"}")
-                if (!result.content.isNullOrBlank()) {
-                    appendLine("   ${result.content}")
-                }
-                if (!result.publishedDate.isNullOrBlank()) {
-                    appendLine("   Published: ${result.publishedDate}")
-                }
-                appendLine()
+        return client.newCall(request).execute().use { response ->
+            val body = response.body?.string()
+            if (!response.isSuccessful) {
+                throw IOException("Tavily: ${httpErrorMessage(response.code)}")
             }
-        }.trim()
+            if (body.isNullOrEmpty()) return "No results found"
+
+            val parsed = try {
+                gson.fromJson(body, TavilySearchResponse::class.java)
+            } catch (e: Exception) {
+                throw IOException("Failed to parse Tavily results: ${e.message}")
+            }
+
+            val results = parsed.results ?: return "No results found"
+            if (results.isEmpty()) return "No results found"
+
+            buildString {
+                results.forEachIndexed { i, result ->
+                    appendLine("${i + 1}. ${result.title ?: "No title"}")
+                    appendLine("   URL: ${result.url ?: "No URL"}")
+                    if (!result.content.isNullOrBlank()) {
+                        appendLine("   ${result.content}")
+                    }
+                    if (!result.publishedDate.isNullOrBlank()) {
+                        appendLine("   Published: ${result.publishedDate}")
+                    }
+                    appendLine()
+                }
+            }.trim()
+        }
     }
 
     private fun searchSynthetic(query: String, apiKey: String): String {
@@ -180,19 +189,15 @@ class WebSearchClient @Inject constructor() {
 
         return client.newCall(request).execute().use { response ->
             val body = response.body?.string()
-
-            if (body.isNullOrEmpty()) {
-                return "Search API error: empty response body (HTTP ${response.code})"
-            }
-
             if (!response.isSuccessful) {
-                return "Search API error: HTTP ${response.code}: $body"
+                throw IOException("Synthetic Search: ${httpErrorMessage(response.code)}")
             }
+            if (body.isNullOrEmpty()) return "No results found"
 
             val parsed = try {
                 gson.fromJson(body, SyntheticSearchResponse::class.java)
             } catch (e: Exception) {
-                return "Failed to parse search results: ${e.message ?: "unknown error"}"
+                throw IOException("Failed to parse Synthetic Search results: ${e.message}")
             }
 
             val results = parsed.results ?: return "No results found"
@@ -214,3 +219,4 @@ class WebSearchClient @Inject constructor() {
         }
     }
 }
+

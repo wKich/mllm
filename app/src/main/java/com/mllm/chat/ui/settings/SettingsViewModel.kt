@@ -7,6 +7,8 @@ import com.mllm.chat.data.model.Provider
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +54,8 @@ class SettingsViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    private var apiKeySaveJob: Job? = null
 
     init {
         loadProviders()
@@ -232,7 +236,11 @@ class SettingsViewModel @Inject constructor(
 
     fun updateWebSearchApiKey(apiKey: String) {
         _uiState.value = _uiState.value.copy(webSearchApiKey = apiKey)
-        saveWebSearchConfig()
+        apiKeySaveJob?.cancel()
+        apiKeySaveJob = viewModelScope.launch {
+            delay(500)
+            saveWebSearchConfig()
+        }
     }
 
     fun updateWebSearchProvider(provider: String) {
