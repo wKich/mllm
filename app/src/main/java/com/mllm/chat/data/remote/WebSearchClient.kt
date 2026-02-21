@@ -43,6 +43,18 @@ private data class TavilyResult(
     val publishedDate: String?
 )
 
+// Synthetic Search response models
+private data class SyntheticSearchResponse(
+    val results: List<SyntheticResult>?
+)
+
+private data class SyntheticResult(
+    val url: String?,
+    val title: String?,
+    val text: String?,
+    val published: String?
+)
+
 @Singleton
 class WebSearchClient @Inject constructor() {
     private val gson = Gson()
@@ -61,6 +73,7 @@ class WebSearchClient @Inject constructor() {
         try {
             when (provider) {
                 "tavily" -> searchTavily(query, apiKey)
+                "synthetic" -> searchSynthetic(query, apiKey)
                 else -> searchBrave(query, apiKey)
             }
         } catch (e: Exception) {
@@ -148,6 +161,48 @@ class WebSearchClient @Inject constructor() {
                 }
                 if (!result.publishedDate.isNullOrBlank()) {
                     appendLine("   Published: ${result.publishedDate}")
+                }
+                appendLine()
+            }
+        }.trim()
+    }
+
+    private fun searchSynthetic(query: String, apiKey: String): String {
+        val requestBody = gson.toJson(mapOf("query" to query))
+            .toRequestBody("application/json".toMediaType())
+
+        val request = Request.Builder()
+            .url("https://api.synthetic.new/v2/search")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: return "No results found"
+
+        if (!response.isSuccessful) {
+            return "Search API error: ${response.code}"
+        }
+
+        val parsed = try {
+            gson.fromJson(body, SyntheticSearchResponse::class.java)
+        } catch (e: Exception) {
+            return "Failed to parse search results"
+        }
+
+        val results = parsed.results ?: return "No results found"
+        if (results.isEmpty()) return "No results found"
+
+        return buildString {
+            results.forEachIndexed { i, result ->
+                appendLine("${i + 1}. ${result.title ?: "No title"}")
+                appendLine("   URL: ${result.url ?: "No URL"}")
+                if (!result.text.isNullOrBlank()) {
+                    appendLine("   ${result.text}")
+                }
+                if (!result.published.isNullOrBlank()) {
+                    appendLine("   Published: ${result.published}")
                 }
                 appendLine()
             }

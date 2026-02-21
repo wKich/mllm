@@ -433,7 +433,7 @@ private fun WebSearchSettings(
     var showApiKey by remember { mutableStateOf(false) }
     var expandedProviderDropdown by remember { mutableStateOf(false) }
 
-    val providers = listOf("brave" to "Brave Search", "tavily" to "Tavily")
+    val providers = listOf("brave" to "Brave Search", "tavily" to "Tavily", "synthetic" to "Synthetic Search")
     val selectedProviderLabel = providers.firstOrNull { it.first == uiState.webSearchProvider }?.second ?: "Brave Search"
 
     Text(
@@ -512,7 +512,11 @@ private fun WebSearchSettings(
                     label = { Text("Search API Key") },
                     placeholder = {
                         Text(
-                            if (uiState.webSearchProvider == "tavily") "tvly-..." else "BSA..."
+                            when (uiState.webSearchProvider) {
+                                "tavily" -> "tvly-..."
+                                "synthetic" -> "sk-..."
+                                else -> "BSA..."
+                            }
                         )
                     },
                     singleLine = true,
@@ -531,10 +535,10 @@ private fun WebSearchSettings(
                         }
                     },
                     supportingText = {
-                        val providerUrl = if (uiState.webSearchProvider == "tavily") {
-                            "Get a free key at app.tavily.com"
-                        } else {
-                            "Get a key at brave.com/search/api"
+                        val providerUrl = when (uiState.webSearchProvider) {
+                            "tavily" -> "Get a free key at app.tavily.com"
+                            "synthetic" -> "Get a key at synthetic.new"
+                            else -> "Get a key at brave.com/search/api"
                         }
                         Text(providerUrl)
                     }
