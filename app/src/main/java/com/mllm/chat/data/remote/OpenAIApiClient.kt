@@ -236,12 +236,32 @@ class OpenAIApiClient @Inject constructor() {
                             // Check for finish reason
                             val finishReason = choice?.finishReason
                             if (finishReason == "tool_calls") {
-                                // Emit all accumulated tool calls
-                                toolCallIds.keys.sorted().forEach { index ->
-                                    val id = toolCallIds[index] ?: return@forEach
-                                    val name = toolCallNames[index] ?: return@forEach
-                                    val args = toolCallArgs[index]?.toString() ?: "{}"
-                                    trySend(StreamEvent.ToolCallRequested(id, name, args))
+                                // Emit all accumulated tool calls, or report errors if data is missing
+                                if (toolCallIds.isEmpty()) {
+                                    trySend(
+                                        StreamEvent.Error(
+                                            "Received finish_reason=tool_calls but no tool calls were accumulated from the stream."
+                                        )
+                                    )
+                                } else {
+                                    var hadIncompleteToolCall = false
+                                    toolCallIds.keys.sorted().forEach { index ->
+                                        val id = toolCallIds[index]
+                                        val name = toolCallNames[index]
+                                        if (id == null || name == null) {
+                                            hadIncompleteToolCall = true
+                                            return@forEach
+                                        }
+                                        val args = toolCallArgs[index]?.toString() ?: "{}"
+                                        trySend(StreamEvent.ToolCallRequested(id, name, args))
+                                    }
+                                    if (hadIncompleteToolCall) {
+                                        trySend(
+                                            StreamEvent.Error(
+                                                "One or more tool calls in the stream were incomplete (missing id or name)."
+                                            )
+                                        )
+                                    }
                                 }
                                 break
                             } else if (finishReason != null && finishReason != "null") {
