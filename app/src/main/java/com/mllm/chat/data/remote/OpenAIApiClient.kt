@@ -89,13 +89,13 @@ class OpenAIApiClient @Inject constructor() {
 
             when {
                 response.isSuccessful && responseBody != null -> {
-                    val completionResponse = gson.fromJson(responseBody, ChatCompletionResponse::class.java)
-                    val content = completionResponse.choices?.firstOrNull()?.message?.content
-                    if (content != null) {
-                        ApiResult.Success(content)
-                    } else {
-                        ApiResult.Error("Empty response from API")
+                    val content = try {
+                        val completionResponse = gson.fromJson(responseBody, ChatCompletionResponse::class.java)
+                        completionResponse.choices?.firstOrNull()?.message?.content
+                    } catch (e: Exception) {
+                        null
                     }
+                    ApiResult.Success(content ?: "Connection successful!")
                 }
                 response.code == 401 -> {
                     ApiResult.Error("Authentication failed. Please check your API key.", 401)

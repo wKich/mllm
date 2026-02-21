@@ -22,7 +22,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.mllm.chat.data.model.DEFAULT_MODELS
 import com.mllm.chat.data.model.Provider
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -275,8 +274,7 @@ private fun ProviderDialog(
                             expanded = expandedModelDropdown,
                             onDismissRequest = { expandedModelDropdown = false }
                         ) {
-                            val modelsToShow = uiState.dialogAvailableModels.ifEmpty { DEFAULT_MODELS }
-                            modelsToShow.forEach { model ->
+                            uiState.dialogAvailableModels.forEach { model ->
                                 DropdownMenuItem(
                                     text = { Text(model) },
                                     onClick = {
@@ -289,7 +287,7 @@ private fun ProviderDialog(
                     }
                     OutlinedButton(
                         onClick = viewModel::fetchModels,
-                        enabled = uiState.isDialogConfigValid && !uiState.isFetchingModels,
+                        enabled = uiState.isFetchModelsConfigValid && !uiState.isFetchingModels,
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         if (uiState.isFetchingModels) {
