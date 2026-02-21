@@ -121,14 +121,40 @@ fun ChatScreen(
                 }
             },
             bottomBar = {
-                ChatInput(
-                    value = uiState.inputText,
-                    onValueChange = viewModel::updateInputText,
-                    onSend = viewModel::sendMessage,
-                    onStop = viewModel::stopStreaming,
-                    isStreaming = uiState.isStreaming,
-                    enabled = uiState.isConfigured && !uiState.isOffline
-                )
+                Column {
+                    if (uiState.isSearching) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "Searching the web…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+                    ChatInput(
+                        value = uiState.inputText,
+                        onValueChange = viewModel::updateInputText,
+                        onSend = viewModel::sendMessage,
+                        onStop = viewModel::stopStreaming,
+                        isStreaming = uiState.isStreaming,
+                        enabled = uiState.isConfigured && !uiState.isOffline
+                    )
+                }
             }
         ) { paddingValues ->
             Box(
@@ -410,10 +436,8 @@ private fun ModelSelectorDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (availableModels.isEmpty()) {
-                    TextButton(onClick = onFetchModels) {
-                        Text("Fetch available models")
-                    }
+                TextButton(onClick = onFetchModels) {
+                    Text(if (availableModels.isEmpty()) "Fetch available models" else "Refresh models")
                 }
 
                 modelsToShow.forEach { model ->

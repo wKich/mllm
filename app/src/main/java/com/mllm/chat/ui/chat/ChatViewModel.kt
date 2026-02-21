@@ -20,6 +20,7 @@ data class ChatUiState(
     val messages: List<Message> = emptyList(),
     val inputText: String = "",
     val isStreaming: Boolean = false,
+    val isSearching: Boolean = false,
     val isOffline: Boolean = false,
     val isConfigured: Boolean = false,
     val error: String? = null,
@@ -74,6 +75,10 @@ class ChatViewModel @Inject constructor(
             val result = repository.fetchModels(config)
             if (result is com.mllm.chat.data.remote.ApiResult.Success) {
                 _uiState.value = _uiState.value.copy(availableModels = result.data)
+                // Persist fetched models so they survive configuration refreshes
+                repository.getActiveProvider()?.let { provider ->
+                    repository.saveProvider(provider.copy(availableModels = result.data))
+                }
             }
         }
     }
@@ -226,8 +231,12 @@ class ChatViewModel @Inject constructor(
                         }
                         _uiState.value = _uiState.value.copy(
                             isStreaming = false,
+                            isSearching = false,
                             error = event.message
                         )
+                    }
+                    StreamEvent.WebSearchStarted -> {
+                        _uiState.value = _uiState.value.copy(isSearching = true)
                     }
                     StreamEvent.Done -> {
                         currentAssistantMessageId?.let { messageId ->
@@ -238,8 +247,9 @@ class ChatViewModel @Inject constructor(
                                 isStreaming = false
                             )
                         }
-                        _uiState.value = _uiState.value.copy(isStreaming = false)
+                        _uiState.value = _uiState.value.copy(isStreaming = false, isSearching = false)
                     }
+                    is StreamEvent.ToolCallRequested -> { /* handled in repository */ }
                 }
             }
         }
@@ -260,7 +270,7 @@ class ChatViewModel @Inject constructor(
             }
         }
 
-        _uiState.value = _uiState.value.copy(isStreaming = false)
+        _uiState.value = _uiState.value.copy(isStreaming = false, isSearching = false)
     }
 
     fun retryLastMessage() {

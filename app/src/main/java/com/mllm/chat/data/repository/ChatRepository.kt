@@ -7,7 +7,12 @@ import com.mllm.chat.data.model.*
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.remote.OpenAIApiClient
 import com.mllm.chat.data.remote.StreamEvent
+import com.mllm.chat.data.remote.WebSearchClient
+import com.google.gson.Gson
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,8 +21,11 @@ class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val securePreferences: SecurePreferences,
-    private val apiClient: OpenAIApiClient
+    private val apiClient: OpenAIApiClient,
+    private val webSearchClient: WebSearchClient
 ) {
+    private val gson = Gson()
+
     // API Configuration
     fun getApiConfig(): ApiConfig = securePreferences.getApiConfig()
 
@@ -28,6 +36,13 @@ class ChatRepository @Inject constructor(
 
     suspend fun fetchModels(config: ApiConfig): ApiResult<List<String>> =
         apiClient.fetchModels(config)
+
+    // Web search configuration
+    fun getWebSearchEnabled(): Boolean = securePreferences.getWebSearchEnabled()
+    fun getWebSearchApiKey(): String = securePreferences.getWebSearchApiKey()
+    fun getWebSearchProvider(): String = securePreferences.getWebSearchProvider()
+    fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) =
+        securePreferences.saveWebSearchConfig(enabled, apiKey, provider)
 
     // Provider management
     fun getProviders(): List<com.mllm.chat.data.model.Provider> =
@@ -109,10 +124,144 @@ class ChatRepository @Inject constructor(
         messageDao.deleteMessagesForConversation(conversationId)
     }
 
-    // Chat completion with streaming
+    // Build the web search tool definition for the OpenAI API
+    private fun buildWebSearchTool(): Tool = Tool(
+        function = FunctionDefinition(
+            name = "web_search",
+            description = "Search the web for current information. Use this when you need up-to-date facts, news, or information not in your training data.",
+            parameters = FunctionParameters(
+                properties = mapOf(
+                    "query" to ParameterProperty(
+                        type = "string",
+                        description = "The search query to look up (max 400 characters)"
+                    )
+                ),
+                required = listOf("query")
+            )
+        )
+    )
+
+    // Data class representing expected web_search tool arguments
+    private data class WebSearchArguments(
+        val query: String?
+    )
+
+    // Parse the web_search arguments JSON to extract the query
+    private fun parseSearchQuery(arguments: String): String? {
+        return try {
+            val parsed = gson.fromJson(arguments, WebSearchArguments::class.java)
+            parsed?.query?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Chat completion with streaming and tool call support
     fun streamChatCompletion(messages: List<Message>): Flow<StreamEvent> {
         val config = getApiConfig()
-        return apiClient.streamChatCompletion(config, messages)
+        val webSearchEnabled = getWebSearchEnabled()
+        val webSearchApiKey = getWebSearchApiKey()
+        val webSearchProvider = getWebSearchProvider()
+
+        if (!webSearchEnabled || webSearchApiKey.isBlank()) {
+            // No tool support - use plain streaming
+            return apiClient.streamChatCompletion(config, messages)
+        }
+
+        val tools = listOf(buildWebSearchTool())
+        val initialChatMessages = messages.map { ChatMessage(role = it.role, content = it.content) }
+
+        return channelFlow {
+            // Maintain conversation context including tool call messages
+            val conversationMessages = initialChatMessages.toMutableList()
+
+            var continueLoop = true
+            var iterations = 0
+            while (continueLoop && iterations < MAX_TOOL_CALL_ITERATIONS) {
+                continueLoop = false
+                iterations++
+                var hasError = false
+                val pendingToolCalls = mutableListOf<AssistantToolCall>()
+                val assistantContentBuilder = StringBuilder()
+
+                apiClient.streamChatCompletionWithMessages(config, conversationMessages, tools)
+                    .collect { event ->
+                        when (event) {
+                            is StreamEvent.Content -> {
+                                assistantContentBuilder.append(event.text)
+                                send(event)
+                            }
+                            is StreamEvent.Reasoning -> send(event)
+                            is StreamEvent.Error -> {
+                                hasError = true
+                                send(event)
+                            }
+                            is StreamEvent.ToolCallRequested -> {
+                                pendingToolCalls.add(
+                                    AssistantToolCall(
+                                        id = event.id,
+                                        function = AssistantToolCallFunction(
+                                            name = event.name,
+                                            arguments = event.arguments
+                                        )
+                                    )
+                                )
+                            }
+                            StreamEvent.Done, StreamEvent.WebSearchStarted -> { /* handled below */ }
+                        }
+                    }
+
+                if (hasError) break
+
+                if (pendingToolCalls.isNotEmpty()) {
+                    // Add assistant message with tool calls to context
+                    conversationMessages.add(
+                        ChatMessage(
+                            role = "assistant",
+                            content = assistantContentBuilder.takeIf { it.isNotEmpty() }?.toString(),
+                            toolCalls = pendingToolCalls
+                        )
+                    )
+
+                    // Execute each tool call and add results
+                    for (toolCall in pendingToolCalls) {
+                        if (toolCall.function.name == "web_search") {
+                            val query = parseSearchQuery(toolCall.function.arguments)
+                                ?: toolCall.function.arguments
+                            send(StreamEvent.WebSearchStarted)
+                            ensureActive()
+                            val result = try {
+                                webSearchClient.search(query, webSearchApiKey, webSearchProvider)
+                            } catch (e: Exception) {
+                                val errorMessage = "Web search failed: ${e.message ?: "Unknown error"}"
+                                send(StreamEvent.Error(errorMessage))
+                                hasError = true
+                                break
+                            }
+                            ensureActive()
+                            conversationMessages.add(
+                                ChatMessage(
+                                    role = "tool",
+                                    content = result,
+                                    toolCallId = toolCall.id
+                                )
+                            )
+                        }
+                    }
+
+                    if (!hasError) {
+                        // Continue the loop to get the final response
+                        continueLoop = true
+                    }
+                }
+            }
+
+            send(StreamEvent.Done)
+        }
+    }
+
+    companion object {
+        private const val MAX_TOOL_CALL_ITERATIONS = 5
     }
 
     // Generate title from first message

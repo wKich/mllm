@@ -7,6 +7,8 @@ import com.mllm.chat.data.model.Provider
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +32,11 @@ data class SettingsUiState(
     val dialogAvailableModels: List<String> = emptyList(),
     val isTesting: Boolean = false,
     val testResult: TestResult? = null,
-    val isFetchingModels: Boolean = false
+    val isFetchingModels: Boolean = false,
+    // Web search settings
+    val webSearchEnabled: Boolean = false,
+    val webSearchApiKey: String = "",
+    val webSearchProvider: String = "brave"
 ) {
     val isDialogConfigValid: Boolean
         get() = dialogBaseUrl.isNotBlank() && dialogApiKey.isNotBlank() && dialogModel.isNotBlank()
@@ -49,6 +55,8 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private var apiKeySaveJob: Job? = null
+
     init {
         loadProviders()
     }
@@ -58,7 +66,10 @@ class SettingsViewModel @Inject constructor(
         val activeId = repository.getActiveProvider()?.id
         _uiState.value = _uiState.value.copy(
             providers = providers,
-            activeProviderId = activeId
+            activeProviderId = activeId,
+            webSearchEnabled = repository.getWebSearchEnabled(),
+            webSearchApiKey = repository.getWebSearchApiKey(),
+            webSearchProvider = repository.getWebSearchProvider()
         )
     }
 
@@ -215,6 +226,31 @@ class SettingsViewModel @Inject constructor(
 
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
+    }
+
+    // Web search settings
+    fun updateWebSearchEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(webSearchEnabled = enabled)
+        saveWebSearchConfig()
+    }
+
+    fun updateWebSearchApiKey(apiKey: String) {
+        _uiState.value = _uiState.value.copy(webSearchApiKey = apiKey)
+        apiKeySaveJob?.cancel()
+        apiKeySaveJob = viewModelScope.launch {
+            delay(500)
+            saveWebSearchConfig()
+        }
+    }
+
+    fun updateWebSearchProvider(provider: String) {
+        _uiState.value = _uiState.value.copy(webSearchProvider = provider)
+        saveWebSearchConfig()
+    }
+
+    private fun saveWebSearchConfig() {
+        val state = _uiState.value
+        repository.saveWebSearchConfig(state.webSearchEnabled, state.webSearchApiKey, state.webSearchProvider)
     }
 
     private fun createDialogConfig(): ApiConfig {

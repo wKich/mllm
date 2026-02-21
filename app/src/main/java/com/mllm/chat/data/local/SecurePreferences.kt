@@ -40,6 +40,9 @@ class SecurePreferences @Inject constructor(
         private const val KEY_PROVIDER_NAME = "provider_name"
         private const val KEY_PROVIDERS = "providers"
         private const val KEY_ACTIVE_PROVIDER_ID = "active_provider_id"
+        private const val KEY_WEB_SEARCH_ENABLED = "web_search_enabled"
+        private const val KEY_WEB_SEARCH_API_KEY = "web_search_api_key"
+        private const val KEY_WEB_SEARCH_PROVIDER = "web_search_provider"
     }
 
     fun saveApiConfig(config: ApiConfig) {
@@ -166,4 +169,23 @@ class SecurePreferences @Inject constructor(
         val activeId = getActiveProviderId() ?: return null
         return getProviders().find { it.id == activeId }
     }
+
+    // Web search configuration
+    fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) {
+        securePrefs.edit().apply {
+            putBoolean(KEY_WEB_SEARCH_ENABLED, enabled)
+            putString(KEY_WEB_SEARCH_API_KEY, apiKey)
+            putString(KEY_WEB_SEARCH_PROVIDER, provider)
+            apply()
+        }
+    }
+
+    fun getWebSearchEnabled(): Boolean =
+        securePrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
+
+    fun getWebSearchApiKey(): String =
+        securePrefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
+
+    fun getWebSearchProvider(): String =
+        securePrefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
 }
