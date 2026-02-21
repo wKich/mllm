@@ -133,8 +133,12 @@ class SecurePreferences @Inject constructor(
 
     fun addProvider(provider: Provider) {
         val providers = getProviders().toMutableList()
-        providers.removeIf { it.id == provider.id }
-        providers.add(provider)
+        val existingIndex = providers.indexOfFirst { it.id == provider.id }
+        if (existingIndex >= 0) {
+            providers[existingIndex] = provider
+        } else {
+            providers.add(provider)
+        }
         saveProviders(providers)
     }
 
