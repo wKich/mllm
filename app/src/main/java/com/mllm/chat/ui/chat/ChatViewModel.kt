@@ -49,13 +49,22 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun checkConfiguration() {
-        val config = repository.getApiConfig()
-        val activeProvider = repository.getActiveProvider()
-        _uiState.value = _uiState.value.copy(
-            isConfigured = config.isConfigured,
-            currentModel = config.model,
-            availableModels = activeProvider?.availableModels ?: emptyList()
-        )
+        viewModelScope.launch {
+            try {
+                val config = repository.getApiConfig()
+                val activeProvider = repository.getActiveProvider()
+                _uiState.value = _uiState.value.copy(
+                    isConfigured = config.isConfigured,
+                    currentModel = config.model,
+                    availableModels = activeProvider?.availableModels ?: emptyList()
+                )
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isConfigured = false,
+                    availableModels = emptyList()
+                )
+            }
+        }
     }
 
     fun refreshConfiguration() {
@@ -64,8 +73,17 @@ class ChatViewModel @Inject constructor(
 
     fun switchModel(newModel: String) {
         viewModelScope.launch {
-            val config = repository.getApiConfig()
-            repository.saveApiConfig(config.copy(model = newModel))
+            val activeProvider = repository.getActiveProvider()
+            if (activeProvider != null) {
+                try {
+                    repository.saveProvider(activeProvider.copy(selectedModel = newModel))
+                } catch (_: Exception) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to save selected model. Please try again."
+                    )
+                    return@launch
+                }
+            }
             _uiState.value = _uiState.value.copy(currentModel = newModel)
         }
     }
@@ -196,8 +214,19 @@ class ChatViewModel @Inject constructor(
         val messages = repository.getMessagesForConversationSync(conversationId)
             .filter { !it.isStreaming && !it.isError }
 
+        // Read config before starting the stream (must be called outside the streaming coroutine)
+        val config = try {
+            repository.getApiConfig()
+        } catch (_: Exception) {
+            currentAssistantMessageId?.let { messageId ->
+                repository.updateMessageContent(messageId, "", isStreaming = false)
+            }
+            _uiState.value = _uiState.value.copy(isStreaming = false, error = "Failed to load configuration")
+            return
+        }
+
         streamingJob = viewModelScope.launch {
-            repository.streamChatCompletion(messages).collect { event ->
+            repository.streamChatCompletion(messages, config).collect { event ->
                 when (event) {
                     is StreamEvent.Content -> {
                         currentStreamingContent.append(event.text)
