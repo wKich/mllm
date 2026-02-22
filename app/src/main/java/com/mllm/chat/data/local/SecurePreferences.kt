@@ -57,7 +57,7 @@ class AppPreferences @Inject constructor(
      * fails, users start fresh with empty preferences.
      */
     private fun migrateFromEncryptedPrefs() {
-        if (prefs.contains(KEY_PROVIDERS) && prefs.contains(KEY_API_KEY)) return
+        if (prefs.contains(KEY_PROVIDERS) || prefs.contains(KEY_API_KEY)) return
         try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -79,7 +79,7 @@ class AppPreferences @Inject constructor(
             encryptedPrefs.getString(KEY_PROVIDER_NAME, null)?.let { editor.putString(KEY_PROVIDER_NAME, it) }
             if (encryptedPrefs.contains(KEY_TEMPERATURE)) editor.putFloat(KEY_TEMPERATURE, encryptedPrefs.getFloat(KEY_TEMPERATURE, 0.7f))
             if (encryptedPrefs.contains(KEY_MAX_TOKENS)) editor.putInt(KEY_MAX_TOKENS, encryptedPrefs.getInt(KEY_MAX_TOKENS, 0))
-            editor.putBoolean(KEY_WEB_SEARCH_ENABLED, encryptedPrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false))
+            if (encryptedPrefs.contains(KEY_WEB_SEARCH_ENABLED)) editor.putBoolean(KEY_WEB_SEARCH_ENABLED, encryptedPrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false))
             encryptedPrefs.getString(KEY_WEB_SEARCH_API_KEY, null)?.let { editor.putString(KEY_WEB_SEARCH_API_KEY, it) }
             encryptedPrefs.getString(KEY_WEB_SEARCH_PROVIDER, null)?.let { editor.putString(KEY_WEB_SEARCH_PROVIDER, it) }
             editor.apply()
