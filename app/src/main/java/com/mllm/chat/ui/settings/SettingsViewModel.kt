@@ -66,15 +66,21 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun loadProviders() {
-        val providers = repository.getProviders()
-        val activeId = repository.getActiveProvider()?.id
-        _uiState.value = _uiState.value.copy(
-            providers = providers,
-            activeProviderId = activeId,
-            webSearchEnabled = repository.getWebSearchEnabled(),
-            webSearchApiKey = repository.getWebSearchApiKey(),
-            webSearchProvider = repository.getWebSearchProvider()
-        )
+        viewModelScope.launch {
+            try {
+                val providers = repository.getProviders()
+                val activeId = repository.getActiveProvider()?.id
+                _uiState.value = _uiState.value.copy(
+                    providers = providers,
+                    activeProviderId = activeId,
+                    webSearchEnabled = repository.getWebSearchEnabled(),
+                    webSearchApiKey = repository.getWebSearchApiKey(),
+                    webSearchProvider = repository.getWebSearchProvider()
+                )
+            } catch (_: Exception) {
+                // DB read failed; UI retains safe defaults (empty provider list)
+            }
+        }
     }
 
     fun openAddProviderDialog() {
