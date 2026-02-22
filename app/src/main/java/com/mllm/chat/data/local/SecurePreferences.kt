@@ -2,8 +2,6 @@ package com.mllm.chat.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mllm.chat.data.model.ApiConfig
@@ -16,21 +14,8 @@ import javax.inject.Singleton
 class SecurePreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val masterKey: MasterKey by lazy {
-        MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-    }
-
-    private val securePrefs: SharedPreferences by lazy {
-        EncryptedSharedPreferences.create(
-            context,
-            "secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("mllm_prefs", Context.MODE_PRIVATE)
 
     private val gson = Gson()
 
@@ -50,7 +35,7 @@ class SecurePreferences @Inject constructor(
     }
 
     fun saveApiConfig(config: ApiConfig) {
-        securePrefs.edit().apply {
+        prefs.edit().apply {
             putString(KEY_BASE_URL, config.baseUrl)
             putString(KEY_API_KEY, config.apiKey)
             putString(KEY_MODEL, config.model)
@@ -100,19 +85,19 @@ class SecurePreferences @Inject constructor(
             if (providers.isNotEmpty()) {
                 val firstProvider = providers.first()
                 // Repair the active provider ID so subsequent calls see a valid active provider
-                securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
+                prefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
                 return firstProvider.toApiConfig()
             }
 
             // Final fallback to legacy flat keys when no providers exist
             ApiConfig(
-                baseUrl = securePrefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
-                apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
-                model = securePrefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
-                systemPrompt = securePrefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
-                temperature = if (securePrefs.contains(KEY_TEMPERATURE)) securePrefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
-                maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null,
-                providerName = securePrefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
+                baseUrl = prefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
+                apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
+                model = prefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
+                systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
+                temperature = if (prefs.contains(KEY_TEMPERATURE)) prefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
+                maxTokens = if (prefs.contains(KEY_MAX_TOKENS)) prefs.getInt(KEY_MAX_TOKENS, 0) else null,
+                providerName = prefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
             )
         } catch (e: Exception) {
             ApiConfig()
@@ -120,24 +105,20 @@ class SecurePreferences @Inject constructor(
     }
 
     fun clearApiKey() {
-        securePrefs.edit().remove(KEY_API_KEY).apply()
+        prefs.edit().remove(KEY_API_KEY).apply()
     }
 
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        // Use commit() for a synchronous disk write to ensure providers are persisted before
-        // returning. If commit() reports failure, fall back to apply() as a best-effort write.
-        // Note: EncryptedSharedPreferences may return false from commit() even on success.
-        val committed = securePrefs.edit().putString(KEY_PROVIDERS, json).commit()
-        if (!committed) {
-            securePrefs.edit().putString(KEY_PROVIDERS, json).apply()
+        if (!prefs.edit().putString(KEY_PROVIDERS, json).commit()) {
+            throw RuntimeException("Failed to save providers to storage")
         }
     }
 
     fun getProviders(): List<Provider> {
         return try {
-            val json = securePrefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
+            val json = prefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
             val type = object : TypeToken<List<Provider>>() {}.type
             gson.fromJson(json, type) ?: emptyList()
         } catch (e: Exception) {
@@ -168,18 +149,18 @@ class SecurePreferences @Inject constructor(
     }
 
     fun setActiveProviderId(providerId: String?) {
-        // commit() used for synchronous write; return value intentionally ignored —
-        // EncryptedSharedPreferences may return false from commit() even when the write succeeds.
+        val editor = prefs.edit()
         if (providerId != null) {
-            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).commit()
+            editor.putString(KEY_ACTIVE_PROVIDER_ID, providerId)
         } else {
-            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).commit()
+            editor.remove(KEY_ACTIVE_PROVIDER_ID)
         }
+        editor.commit()
     }
 
     fun getActiveProviderId(): String? {
         return try {
-            securePrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+            prefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
         } catch (e: Exception) {
             null
         }
@@ -192,7 +173,7 @@ class SecurePreferences @Inject constructor(
 
     // Web search configuration
     fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) {
-        securePrefs.edit().apply {
+        prefs.edit().apply {
             putBoolean(KEY_WEB_SEARCH_ENABLED, enabled)
             putString(KEY_WEB_SEARCH_API_KEY, apiKey)
             putString(KEY_WEB_SEARCH_PROVIDER, provider)
@@ -202,21 +183,21 @@ class SecurePreferences @Inject constructor(
 
     fun getWebSearchEnabled(): Boolean =
         try {
-            securePrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
+            prefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
         } catch (e: Exception) {
             false
         }
 
     fun getWebSearchApiKey(): String =
         try {
-            securePrefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
+            prefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
         } catch (e: Exception) {
             ""
         }
 
     fun getWebSearchProvider(): String =
         try {
-            securePrefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
+            prefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
         } catch (e: Exception) {
             "brave"
         }
