@@ -2,7 +2,7 @@ package com.mllm.chat.data.repository
 
 import com.mllm.chat.data.local.ConversationDao
 import com.mllm.chat.data.local.MessageDao
-import com.mllm.chat.data.local.SecurePreferences
+import com.mllm.chat.data.local.AppPreferences
 import com.mllm.chat.data.model.*
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.remote.OpenAIApiClient
@@ -22,17 +22,17 @@ import javax.inject.Singleton
 class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
-    private val securePreferences: SecurePreferences,
+    private val appPreferences: AppPreferences,
     private val apiClient: OpenAIApiClient,
     private val webSearchClient: WebSearchClient
 ) {
     private val gson = Gson()
 
     // API Configuration
-    fun getApiConfig(): ApiConfig = securePreferences.getApiConfig()
+    fun getApiConfig(): ApiConfig = appPreferences.getApiConfig()
 
     suspend fun saveApiConfig(config: ApiConfig) =
-        withContext(Dispatchers.IO) { securePreferences.saveApiConfig(config) }
+        withContext(Dispatchers.IO) { appPreferences.saveApiConfig(config) }
 
     suspend fun testConnection(config: ApiConfig): ApiResult<String> =
         apiClient.testConnection(config)
@@ -41,27 +41,27 @@ class ChatRepository @Inject constructor(
         apiClient.fetchModels(config)
 
     // Web search configuration
-    fun getWebSearchEnabled(): Boolean = securePreferences.getWebSearchEnabled()
-    fun getWebSearchApiKey(): String = securePreferences.getWebSearchApiKey()
-    fun getWebSearchProvider(): String = securePreferences.getWebSearchProvider()
+    fun getWebSearchEnabled(): Boolean = appPreferences.getWebSearchEnabled()
+    fun getWebSearchApiKey(): String = appPreferences.getWebSearchApiKey()
+    fun getWebSearchProvider(): String = appPreferences.getWebSearchProvider()
     fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) =
-        securePreferences.saveWebSearchConfig(enabled, apiKey, provider)
+        appPreferences.saveWebSearchConfig(enabled, apiKey, provider)
 
     // Provider management
     fun getProviders(): List<com.mllm.chat.data.model.Provider> =
-        securePreferences.getProviders()
+        appPreferences.getProviders()
 
     suspend fun saveProvider(provider: com.mllm.chat.data.model.Provider) =
-        withContext(Dispatchers.IO) { securePreferences.addProvider(provider) }
+        withContext(Dispatchers.IO) { appPreferences.addProvider(provider) }
 
     suspend fun deleteProvider(providerId: String) =
-        withContext(Dispatchers.IO) { securePreferences.deleteProvider(providerId) }
+        withContext(Dispatchers.IO) { appPreferences.deleteProvider(providerId) }
 
     suspend fun setActiveProvider(providerId: String) =
-        withContext(Dispatchers.IO) { securePreferences.setActiveProviderId(providerId) }
+        withContext(Dispatchers.IO) { appPreferences.setActiveProviderId(providerId) }
 
     fun getActiveProvider(): com.mllm.chat.data.model.Provider? =
-        securePreferences.getActiveProvider()
+        appPreferences.getActiveProvider()
 
     // Conversations
     fun getAllConversations(): Flow<List<Conversation>> =

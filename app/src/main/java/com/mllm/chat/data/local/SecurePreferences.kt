@@ -2,6 +2,8 @@ package com.mllm.chat.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mllm.chat.data.model.ApiConfig
@@ -10,16 +12,26 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Plain SharedPreferences-backed storage for app configuration and provider data.
+ * Data lives in the app's private storage (/data/data/<pkg>/shared_prefs/) which is
+ * inaccessible to other apps on non-rooted devices; OS-level isolation is sufficient here.
+ *
+ * Previously named SecurePreferences (used EncryptedSharedPreferences); renamed to
+ * AppPreferences to accurately reflect that data is stored unencrypted.
+ */
 @Singleton
-class SecurePreferences @Inject constructor(
+class AppPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val prefs: SharedPreferences =
-        context.getSharedPreferences("mllm_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
     private val gson = Gson()
 
     companion object {
+        private const val PREFS_FILE = "mllm_prefs"
+        private const val LEGACY_PREFS_FILE = "secure_prefs"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL = "model"
@@ -32,6 +44,49 @@ class SecurePreferences @Inject constructor(
         private const val KEY_WEB_SEARCH_ENABLED = "web_search_enabled"
         private const val KEY_WEB_SEARCH_API_KEY = "web_search_api_key"
         private const val KEY_WEB_SEARCH_PROVIDER = "web_search_provider"
+    }
+
+    init {
+        migrateFromEncryptedPrefs()
+    }
+
+    /**
+     * One-time migration from the legacy EncryptedSharedPreferences file ("secure_prefs")
+     * to plain SharedPreferences ("mllm_prefs"). Wrapped in try-catch because
+     * EncryptedSharedPreferences can be unreliable on some devices/OS versions; if migration
+     * fails, users start fresh with empty preferences.
+     */
+    private fun migrateFromEncryptedPrefs() {
+        if (prefs.contains(KEY_PROVIDERS) && prefs.contains(KEY_API_KEY)) return
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val encryptedPrefs = EncryptedSharedPreferences.create(
+                context,
+                LEGACY_PREFS_FILE,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            val editor = prefs.edit()
+            encryptedPrefs.getString(KEY_PROVIDERS, null)?.let { editor.putString(KEY_PROVIDERS, it) }
+            encryptedPrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)?.let { editor.putString(KEY_ACTIVE_PROVIDER_ID, it) }
+            encryptedPrefs.getString(KEY_BASE_URL, null)?.let { editor.putString(KEY_BASE_URL, it) }
+            encryptedPrefs.getString(KEY_API_KEY, null)?.let { editor.putString(KEY_API_KEY, it) }
+            encryptedPrefs.getString(KEY_MODEL, null)?.let { editor.putString(KEY_MODEL, it) }
+            encryptedPrefs.getString(KEY_SYSTEM_PROMPT, null)?.let { editor.putString(KEY_SYSTEM_PROMPT, it) }
+            encryptedPrefs.getString(KEY_PROVIDER_NAME, null)?.let { editor.putString(KEY_PROVIDER_NAME, it) }
+            if (encryptedPrefs.contains(KEY_TEMPERATURE)) editor.putFloat(KEY_TEMPERATURE, encryptedPrefs.getFloat(KEY_TEMPERATURE, 0.7f))
+            if (encryptedPrefs.contains(KEY_MAX_TOKENS)) editor.putInt(KEY_MAX_TOKENS, encryptedPrefs.getInt(KEY_MAX_TOKENS, 0))
+            editor.putBoolean(KEY_WEB_SEARCH_ENABLED, encryptedPrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false))
+            encryptedPrefs.getString(KEY_WEB_SEARCH_API_KEY, null)?.let { editor.putString(KEY_WEB_SEARCH_API_KEY, it) }
+            encryptedPrefs.getString(KEY_WEB_SEARCH_PROVIDER, null)?.let { editor.putString(KEY_WEB_SEARCH_PROVIDER, it) }
+            editor.apply()
+            context.deleteSharedPreferences(LEGACY_PREFS_FILE)
+        } catch (_: Exception) {
+            // Migration failed; start fresh — users will need to re-enter their configuration.
+        }
     }
 
     fun saveApiConfig(config: ApiConfig) {
@@ -111,9 +166,7 @@ class SecurePreferences @Inject constructor(
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        if (!prefs.edit().putString(KEY_PROVIDERS, json).commit()) {
-            throw RuntimeException("Failed to save providers to storage")
-        }
+        prefs.edit().putString(KEY_PROVIDERS, json).apply()
     }
 
     fun getProviders(): List<Provider> {
@@ -149,13 +202,14 @@ class SecurePreferences @Inject constructor(
     }
 
     fun setActiveProviderId(providerId: String?) {
-        val editor = prefs.edit()
-        if (providerId != null) {
-            editor.putString(KEY_ACTIVE_PROVIDER_ID, providerId)
-        } else {
-            editor.remove(KEY_ACTIVE_PROVIDER_ID)
+        prefs.edit().apply {
+            if (providerId != null) {
+                putString(KEY_ACTIVE_PROVIDER_ID, providerId)
+            } else {
+                remove(KEY_ACTIVE_PROVIDER_ID)
+            }
+            apply()
         }
-        editor.commit()
     }
 
     fun getActiveProviderId(): String? {
