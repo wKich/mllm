@@ -63,10 +63,11 @@ class ChatViewModel @Inject constructor(
     }
 
     fun switchModel(newModel: String) {
-        val config = repository.getApiConfig()
-        val updatedConfig = config.copy(model = newModel)
-        repository.saveApiConfig(updatedConfig)
-        _uiState.value = _uiState.value.copy(currentModel = newModel)
+        viewModelScope.launch {
+            val config = repository.getApiConfig()
+            repository.saveApiConfig(config.copy(model = newModel))
+            _uiState.value = _uiState.value.copy(currentModel = newModel)
+        }
     }
 
     fun loadAvailableModels() {

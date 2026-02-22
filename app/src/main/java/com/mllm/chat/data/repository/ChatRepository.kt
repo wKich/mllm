@@ -31,7 +31,8 @@ class ChatRepository @Inject constructor(
     // API Configuration
     fun getApiConfig(): ApiConfig = securePreferences.getApiConfig()
 
-    fun saveApiConfig(config: ApiConfig) = securePreferences.saveApiConfig(config)
+    suspend fun saveApiConfig(config: ApiConfig) =
+        withContext(Dispatchers.IO) { securePreferences.saveApiConfig(config) }
 
     suspend fun testConnection(config: ApiConfig): ApiResult<String> =
         apiClient.testConnection(config)
