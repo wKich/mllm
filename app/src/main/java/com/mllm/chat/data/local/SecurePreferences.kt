@@ -166,7 +166,7 @@ class AppPreferences @Inject constructor(
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        prefs.edit().putString(KEY_PROVIDERS, json).apply()
+        prefs.edit().putString(KEY_PROVIDERS, json).commit()
     }
 
     fun getProviders(): List<Provider> {
@@ -208,7 +208,7 @@ class AppPreferences @Inject constructor(
             } else {
                 remove(KEY_ACTIVE_PROVIDER_ID)
             }
-            apply()
+            commit()
         }
     }
 
