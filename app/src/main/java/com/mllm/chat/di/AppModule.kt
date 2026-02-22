@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.mllm.chat.data.local.AppDatabase
 import com.mllm.chat.data.local.ConversationDao
 import com.mllm.chat.data.local.MessageDao
+import com.mllm.chat.data.local.ProviderDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,7 +25,7 @@ object AppModule {
             AppDatabase::class.java,
             "aichat_database"
         )
-        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
         .build()
     }
 
@@ -38,5 +39,11 @@ object AppModule {
     @Singleton
     fun provideMessageDao(database: AppDatabase): MessageDao {
         return database.messageDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideProviderDao(database: AppDatabase): ProviderDao {
+        return database.providerDao()
     }
 }

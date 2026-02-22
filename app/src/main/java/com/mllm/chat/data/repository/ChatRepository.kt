@@ -3,6 +3,8 @@ package com.mllm.chat.data.repository
 import com.mllm.chat.data.local.ConversationDao
 import com.mllm.chat.data.local.MessageDao
 import com.mllm.chat.data.local.AppPreferences
+import com.mllm.chat.data.local.ProviderDao
+import com.mllm.chat.data.local.ProviderEntity
 import com.mllm.chat.data.model.*
 import com.mllm.chat.data.remote.ApiResult
 import com.mllm.chat.data.remote.OpenAIApiClient
@@ -23,16 +25,16 @@ class ChatRepository @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val appPreferences: AppPreferences,
+    private val providerDao: ProviderDao,
     private val apiClient: OpenAIApiClient,
     private val webSearchClient: WebSearchClient
 ) {
     private val gson = Gson()
 
-    // API Configuration
-    fun getApiConfig(): ApiConfig = appPreferences.getApiConfig()
-
-    suspend fun saveApiConfig(config: ApiConfig) =
-        withContext(Dispatchers.IO) { appPreferences.saveApiConfig(config) }
+    // API Configuration — reads the active provider from Room
+    suspend fun getApiConfig(): ApiConfig = withContext(Dispatchers.IO) {
+        providerDao.getActiveProvider()?.toProvider()?.toApiConfig() ?: ApiConfig()
+    }
 
     suspend fun testConnection(config: ApiConfig): ApiResult<String> =
         apiClient.testConnection(config)
@@ -47,21 +49,33 @@ class ChatRepository @Inject constructor(
     fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) =
         appPreferences.saveWebSearchConfig(enabled, apiKey, provider)
 
-    // Provider management
-    fun getProviders(): List<com.mllm.chat.data.model.Provider> =
-        appPreferences.getProviders()
+    // Provider management — all backed by Room
+    suspend fun getProviders(): List<com.mllm.chat.data.model.Provider> = withContext(Dispatchers.IO) {
+        providerDao.getAllProviders().map { it.toProvider() }
+    }
 
-    suspend fun saveProvider(provider: com.mllm.chat.data.model.Provider) =
-        withContext(Dispatchers.IO) { appPreferences.addProvider(provider) }
+    suspend fun saveProvider(provider: com.mllm.chat.data.model.Provider) = withContext(Dispatchers.IO) {
+        // Preserve the current isActive flag when updating an existing provider
+        val isActive = providerDao.getProviderById(provider.id)?.isActive ?: false
+        providerDao.upsertProvider(ProviderEntity.fromProvider(provider, isActive))
+    }
 
-    suspend fun deleteProvider(providerId: String) =
-        withContext(Dispatchers.IO) { appPreferences.deleteProvider(providerId) }
+    suspend fun deleteProvider(providerId: String) = withContext(Dispatchers.IO) {
+        val wasActive = providerDao.getActiveProvider()?.id == providerId
+        providerDao.deleteById(providerId)
+        if (wasActive) {
+            // Auto-activate the first remaining provider
+            providerDao.getAllProviders().firstOrNull()?.let { providerDao.markActive(it.id) }
+        }
+    }
 
-    suspend fun setActiveProvider(providerId: String) =
-        withContext(Dispatchers.IO) { appPreferences.setActiveProviderId(providerId) }
+    suspend fun setActiveProvider(providerId: String) = withContext(Dispatchers.IO) {
+        providerDao.setActiveProvider(providerId)
+    }
 
-    fun getActiveProvider(): com.mllm.chat.data.model.Provider? =
-        appPreferences.getActiveProvider()
+    suspend fun getActiveProvider(): com.mllm.chat.data.model.Provider? = withContext(Dispatchers.IO) {
+        providerDao.getActiveProvider()?.toProvider()
+    }
 
     // Conversations
     fun getAllConversations(): Flow<List<Conversation>> =
@@ -159,9 +173,9 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    // Chat completion with streaming and tool call support
-    fun streamChatCompletion(messages: List<Message>): Flow<StreamEvent> {
-        val config = getApiConfig()
+    // Chat completion with streaming and tool call support.
+    // config must be obtained by the caller (e.g. via getApiConfig()) before invoking this.
+    fun streamChatCompletion(messages: List<Message>, config: ApiConfig): Flow<StreamEvent> {
         val webSearchEnabled = getWebSearchEnabled()
         val webSearchApiKey = getWebSearchApiKey()
         val webSearchProvider = getWebSearchProvider()

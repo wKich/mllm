@@ -49,13 +49,15 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun checkConfiguration() {
-        val config = repository.getApiConfig()
-        val activeProvider = repository.getActiveProvider()
-        _uiState.value = _uiState.value.copy(
-            isConfigured = config.isConfigured,
-            currentModel = config.model,
-            availableModels = activeProvider?.availableModels ?: emptyList()
-        )
+        viewModelScope.launch {
+            val config = repository.getApiConfig()
+            val activeProvider = repository.getActiveProvider()
+            _uiState.value = _uiState.value.copy(
+                isConfigured = config.isConfigured,
+                currentModel = config.model,
+                availableModels = activeProvider?.availableModels ?: emptyList()
+            )
+        }
     }
 
     fun refreshConfiguration() {
@@ -64,8 +66,10 @@ class ChatViewModel @Inject constructor(
 
     fun switchModel(newModel: String) {
         viewModelScope.launch {
-            val config = repository.getApiConfig()
-            repository.saveApiConfig(config.copy(model = newModel))
+            val activeProvider = repository.getActiveProvider()
+            if (activeProvider != null) {
+                repository.saveProvider(activeProvider.copy(selectedModel = newModel))
+            }
             _uiState.value = _uiState.value.copy(currentModel = newModel)
         }
     }
@@ -196,8 +200,11 @@ class ChatViewModel @Inject constructor(
         val messages = repository.getMessagesForConversationSync(conversationId)
             .filter { !it.isStreaming && !it.isError }
 
+        // Read config before starting the stream (must be called outside the streaming coroutine)
+        val config = repository.getApiConfig()
+
         streamingJob = viewModelScope.launch {
-            repository.streamChatCompletion(messages).collect { event ->
+            repository.streamChatCompletion(messages, config).collect { event ->
                 when (event) {
                     is StreamEvent.Content -> {
                         currentStreamingContent.append(event.text)
