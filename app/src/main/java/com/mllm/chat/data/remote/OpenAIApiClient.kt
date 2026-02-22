@@ -272,7 +272,6 @@ class OpenAIApiClient @Inject constructor() {
                 }
             }
 
-            trySend(StreamEvent.Done)
             close()
 
         } catch (e: Exception) {
