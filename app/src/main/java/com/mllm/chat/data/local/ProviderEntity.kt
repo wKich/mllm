@@ -6,6 +6,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mllm.chat.data.model.Provider
 
+private val gson = Gson()
+
 @Entity(tableName = "providers")
 data class ProviderEntity(
     @PrimaryKey val id: String,
@@ -42,8 +44,6 @@ data class ProviderEntity(
     }
 
     companion object {
-        private val gson = Gson()
-
         fun fromProvider(provider: Provider, isActive: Boolean): ProviderEntity = ProviderEntity(
             id = provider.id,
             name = provider.name,

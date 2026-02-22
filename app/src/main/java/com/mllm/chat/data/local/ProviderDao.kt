@@ -28,11 +28,12 @@ abstract class ProviderDao {
     abstract suspend fun clearActive()
 
     @Query("UPDATE providers SET isActive = 1 WHERE id = :id")
-    abstract suspend fun markActive(id: String)
+    abstract suspend fun markActive(id: String): Int
 
     @Transaction
     open suspend fun setActiveProvider(id: String) {
         clearActive()
-        markActive(id)
+        val updatedRows = markActive(id)
+        require(updatedRows > 0) { "No provider found with id=$id to mark as active." }
     }
 }
