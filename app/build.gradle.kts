@@ -89,11 +89,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // Security
+    // Security (used only for migrating existing data from the legacy EncryptedSharedPreferences file)
     implementation("androidx.security:security-crypto:1.1.0")
-
-    // Error Prone annotations (required by Tink used in security-crypto)
-    compileOnly("com.google.errorprone:error_prone_annotations:2.18.0")
 
     // Markdown rendering
     implementation("io.noties.markwon:core:4.6.2")

@@ -12,29 +12,26 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Plain SharedPreferences-backed storage for app configuration and provider data.
+ * Data lives in the app's private storage (/data/data/<pkg>/shared_prefs/) which is
+ * inaccessible to other apps on non-rooted devices; OS-level isolation is sufficient here.
+ *
+ * Previously named SecurePreferences (used EncryptedSharedPreferences); renamed to
+ * AppPreferences to accurately reflect that data is stored unencrypted.
+ */
 @Singleton
-class SecurePreferences @Inject constructor(
+class AppPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val masterKey: MasterKey by lazy {
-        MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-    }
-
-    private val securePrefs: SharedPreferences by lazy {
-        EncryptedSharedPreferences.create(
-            context,
-            "secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
     private val gson = Gson()
 
     companion object {
+        private const val PREFS_FILE = "mllm_prefs"
+        private const val LEGACY_PREFS_FILE = "secure_prefs"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL = "model"
@@ -49,8 +46,51 @@ class SecurePreferences @Inject constructor(
         private const val KEY_WEB_SEARCH_PROVIDER = "web_search_provider"
     }
 
+    init {
+        migrateFromEncryptedPrefs()
+    }
+
+    /**
+     * One-time migration from the legacy EncryptedSharedPreferences file ("secure_prefs")
+     * to plain SharedPreferences ("mllm_prefs"). Wrapped in try-catch because
+     * EncryptedSharedPreferences can be unreliable on some devices/OS versions; if migration
+     * fails, users start fresh with empty preferences.
+     */
+    private fun migrateFromEncryptedPrefs() {
+        if (prefs.contains(KEY_PROVIDERS) && prefs.contains(KEY_API_KEY)) return
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val encryptedPrefs = EncryptedSharedPreferences.create(
+                context,
+                LEGACY_PREFS_FILE,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            val editor = prefs.edit()
+            encryptedPrefs.getString(KEY_PROVIDERS, null)?.let { editor.putString(KEY_PROVIDERS, it) }
+            encryptedPrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)?.let { editor.putString(KEY_ACTIVE_PROVIDER_ID, it) }
+            encryptedPrefs.getString(KEY_BASE_URL, null)?.let { editor.putString(KEY_BASE_URL, it) }
+            encryptedPrefs.getString(KEY_API_KEY, null)?.let { editor.putString(KEY_API_KEY, it) }
+            encryptedPrefs.getString(KEY_MODEL, null)?.let { editor.putString(KEY_MODEL, it) }
+            encryptedPrefs.getString(KEY_SYSTEM_PROMPT, null)?.let { editor.putString(KEY_SYSTEM_PROMPT, it) }
+            encryptedPrefs.getString(KEY_PROVIDER_NAME, null)?.let { editor.putString(KEY_PROVIDER_NAME, it) }
+            if (encryptedPrefs.contains(KEY_TEMPERATURE)) editor.putFloat(KEY_TEMPERATURE, encryptedPrefs.getFloat(KEY_TEMPERATURE, 0.7f))
+            if (encryptedPrefs.contains(KEY_MAX_TOKENS)) editor.putInt(KEY_MAX_TOKENS, encryptedPrefs.getInt(KEY_MAX_TOKENS, 0))
+            editor.putBoolean(KEY_WEB_SEARCH_ENABLED, encryptedPrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false))
+            encryptedPrefs.getString(KEY_WEB_SEARCH_API_KEY, null)?.let { editor.putString(KEY_WEB_SEARCH_API_KEY, it) }
+            encryptedPrefs.getString(KEY_WEB_SEARCH_PROVIDER, null)?.let { editor.putString(KEY_WEB_SEARCH_PROVIDER, it) }
+            editor.apply()
+            context.deleteSharedPreferences(LEGACY_PREFS_FILE)
+        } catch (_: Exception) {
+            // Migration failed; start fresh — users will need to re-enter their configuration.
+        }
+    }
+
     fun saveApiConfig(config: ApiConfig) {
-        securePrefs.edit().apply {
+        prefs.edit().apply {
             putString(KEY_BASE_URL, config.baseUrl)
             putString(KEY_API_KEY, config.apiKey)
             putString(KEY_MODEL, config.model)
@@ -100,19 +140,19 @@ class SecurePreferences @Inject constructor(
             if (providers.isNotEmpty()) {
                 val firstProvider = providers.first()
                 // Repair the active provider ID so subsequent calls see a valid active provider
-                securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
+                prefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, firstProvider.id).apply()
                 return firstProvider.toApiConfig()
             }
 
             // Final fallback to legacy flat keys when no providers exist
             ApiConfig(
-                baseUrl = securePrefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
-                apiKey = securePrefs.getString(KEY_API_KEY, "") ?: "",
-                model = securePrefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
-                systemPrompt = securePrefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
-                temperature = if (securePrefs.contains(KEY_TEMPERATURE)) securePrefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
-                maxTokens = if (securePrefs.contains(KEY_MAX_TOKENS)) securePrefs.getInt(KEY_MAX_TOKENS, 0) else null,
-                providerName = securePrefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
+                baseUrl = prefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1",
+                apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
+                model = prefs.getString(KEY_MODEL, "gpt-4") ?: "gpt-4",
+                systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "") ?: "",
+                temperature = if (prefs.contains(KEY_TEMPERATURE)) prefs.getFloat(KEY_TEMPERATURE, 0.7f) else null,
+                maxTokens = if (prefs.contains(KEY_MAX_TOKENS)) prefs.getInt(KEY_MAX_TOKENS, 0) else null,
+                providerName = prefs.getString(KEY_PROVIDER_NAME, "Default") ?: "Default"
             )
         } catch (e: Exception) {
             ApiConfig()
@@ -120,24 +160,18 @@ class SecurePreferences @Inject constructor(
     }
 
     fun clearApiKey() {
-        securePrefs.edit().remove(KEY_API_KEY).apply()
+        prefs.edit().remove(KEY_API_KEY).apply()
     }
 
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        // Use commit() for a synchronous disk write to ensure providers are persisted before
-        // returning. If commit() reports failure, fall back to apply() as a best-effort write.
-        // Note: EncryptedSharedPreferences may return false from commit() even on success.
-        val committed = securePrefs.edit().putString(KEY_PROVIDERS, json).commit()
-        if (!committed) {
-            securePrefs.edit().putString(KEY_PROVIDERS, json).apply()
-        }
+        prefs.edit().putString(KEY_PROVIDERS, json).apply()
     }
 
     fun getProviders(): List<Provider> {
         return try {
-            val json = securePrefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
+            val json = prefs.getString(KEY_PROVIDERS, null) ?: return emptyList()
             val type = object : TypeToken<List<Provider>>() {}.type
             gson.fromJson(json, type) ?: emptyList()
         } catch (e: Exception) {
@@ -168,18 +202,19 @@ class SecurePreferences @Inject constructor(
     }
 
     fun setActiveProviderId(providerId: String?) {
-        // commit() used for synchronous write; return value intentionally ignored —
-        // EncryptedSharedPreferences may return false from commit() even when the write succeeds.
-        if (providerId != null) {
-            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).commit()
-        } else {
-            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).commit()
+        prefs.edit().apply {
+            if (providerId != null) {
+                putString(KEY_ACTIVE_PROVIDER_ID, providerId)
+            } else {
+                remove(KEY_ACTIVE_PROVIDER_ID)
+            }
+            apply()
         }
     }
 
     fun getActiveProviderId(): String? {
         return try {
-            securePrefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+            prefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
         } catch (e: Exception) {
             null
         }
@@ -192,7 +227,7 @@ class SecurePreferences @Inject constructor(
 
     // Web search configuration
     fun saveWebSearchConfig(enabled: Boolean, apiKey: String, provider: String) {
-        securePrefs.edit().apply {
+        prefs.edit().apply {
             putBoolean(KEY_WEB_SEARCH_ENABLED, enabled)
             putString(KEY_WEB_SEARCH_API_KEY, apiKey)
             putString(KEY_WEB_SEARCH_PROVIDER, provider)
@@ -202,21 +237,21 @@ class SecurePreferences @Inject constructor(
 
     fun getWebSearchEnabled(): Boolean =
         try {
-            securePrefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
+            prefs.getBoolean(KEY_WEB_SEARCH_ENABLED, false)
         } catch (e: Exception) {
             false
         }
 
     fun getWebSearchApiKey(): String =
         try {
-            securePrefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
+            prefs.getString(KEY_WEB_SEARCH_API_KEY, "") ?: ""
         } catch (e: Exception) {
             ""
         }
 
     fun getWebSearchProvider(): String =
         try {
-            securePrefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
+            prefs.getString(KEY_WEB_SEARCH_PROVIDER, "brave") ?: "brave"
         } catch (e: Exception) {
             "brave"
         }
