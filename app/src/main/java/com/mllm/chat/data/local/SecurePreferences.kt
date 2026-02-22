@@ -126,7 +126,10 @@ class SecurePreferences @Inject constructor(
     // Provider management
     fun saveProviders(providers: List<Provider>) {
         val json = gson.toJson(providers)
-        securePrefs.edit().putString(KEY_PROVIDERS, json).apply()
+        // commit() is used for a synchronous disk write to ensure providers are persisted before
+        // returning. The return value is intentionally ignored because security-crypto:1.1.0-alpha06
+        // has a known bug where commit() returns false even when the write succeeds.
+        securePrefs.edit().putString(KEY_PROVIDERS, json).commit()
     }
 
     fun getProviders(): List<Provider> {
@@ -162,10 +165,12 @@ class SecurePreferences @Inject constructor(
     }
 
     fun setActiveProviderId(providerId: String?) {
+        // commit() used for synchronous write; return value ignored due to false-negative bug in
+        // security-crypto:1.1.0-alpha06 (see saveProviders for details).
         if (providerId != null) {
-            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).apply()
+            securePrefs.edit().putString(KEY_ACTIVE_PROVIDER_ID, providerId).commit()
         } else {
-            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).apply()
+            securePrefs.edit().remove(KEY_ACTIVE_PROVIDER_ID).commit()
         }
     }
 
