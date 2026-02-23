@@ -194,6 +194,7 @@ class ChatRepository @Inject constructor(
 
             var continueLoop = true
             var iterations = 0
+            var anyError = false
             while (continueLoop && iterations < MAX_TOOL_CALL_ITERATIONS) {
                 continueLoop = false
                 iterations++
@@ -228,7 +229,10 @@ class ChatRepository @Inject constructor(
                         }
                     }
 
-                if (hasError) break
+                if (hasError) {
+                    anyError = true
+                    break
+                }
 
                 if (pendingToolCalls.isNotEmpty()) {
                     // Add assistant message with tool calls to context
@@ -266,14 +270,18 @@ class ChatRepository @Inject constructor(
                         }
                     }
 
-                    if (!hasError) {
+                    if (hasError) {
+                        anyError = true
+                    } else {
                         // Continue the loop to get the final response
                         continueLoop = true
                     }
                 }
             }
 
-            send(StreamEvent.Done)
+            if (!anyError) {
+                send(StreamEvent.Done)
+            }
         }
     }
 
