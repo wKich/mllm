@@ -2,6 +2,13 @@
 
 This file provides guidance for Claude Code when working with this Android project.
 
+## Mandatory Rules
+
+> **These rules are non-negotiable and apply to every change made to this codebase.**
+
+1. **Keep CLAUDE.md current**: Every change to the project — new features, modified behaviour, renamed files, updated dependencies, architectural decisions, build steps — **must** be reflected in this file before the work is considered done.
+2. **Test every change**: Every new or changed piece of functionality **must** be covered by tests. Write or update unit tests (and instrumented tests where appropriate) as part of the same commit or PR. No feature is complete without passing tests.
+
 ## Project Overview
 
 **AI Chat** is a privacy-focused Android chat application written in Kotlin that connects to any OpenAI-compatible API (OpenAI, Ollama, OpenRouter, etc.). It stores all conversations locally in SQLite, encrypts API keys via Android Keystore, and supports real-time streaming responses with SSE.
@@ -146,7 +153,10 @@ Steps: checkout → JDK 17 setup → Gradle cache → `./gradlew test` → `asse
 
 ## Testing
 
+**All new or changed functionality must have corresponding tests** (see Mandatory Rules above).
+
 No test files currently exist. When adding tests:
 - Unit tests go in `app/src/test/`
 - Instrumented tests go in `app/src/androidTest/`
 - Run with `./gradlew test` and `./gradlew connectedAndroidTest` respectively.
+- Tests must pass before a change is merged.
